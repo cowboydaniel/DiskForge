@@ -21,7 +21,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QGroupBox,
     QComboBox,
-    QPushButton,
     QInputDialog,
     QHeaderView,
     QFrame,
@@ -36,10 +35,13 @@ from diskforge.core.models import Disk, Partition
 from diskforge.core.safety import DangerMode
 from diskforge.core.session import Session
 from diskforge.ui.models.disk_model import DiskModel
-from diskforge.ui.models.job_model import JobModel
+from diskforge.ui.models.job_model import JobModel, PendingOperationsModel
+from diskforge.ui.assets import DiskForgeIcons
 from diskforge.ui.theme import aomei_qss
-from diskforge.ui.widgets.disk_view import DiskGraphicsView
-from diskforge.ui.widgets.progress_widget import ProgressWidget
+from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
+from diskforge.ui.widgets.disk_view import DiskMapWidget
+from diskforge.ui.widgets.operations_tree import OperationsTreeWidget
+from diskforge.ui.widgets.progress_widget import ProgressWidget, PendingOperationsWidget
 from diskforge.ui.widgets.ribbon import RibbonWidget
 from diskforge.ui.views.wizards import (
     CreatePartitionWizard,
@@ -66,6 +68,7 @@ class MainWindow(QMainWindow):
         # Models
         self._disk_model = DiskModel(self)
         self._job_model = JobModel(session.job_runner, self)
+        self._pending_model = PendingOperationsModel(self)
 
         # Set up UI
         self._apply_aomei_theme()
@@ -99,6 +102,24 @@ class MainWindow(QMainWindow):
             "format_partition": QAction("Format Partition", self),
             "delete_partition": QAction("Delete Partition", self),
         }
+
+        icon_map = {
+            "refresh": DiskForgeIcons.REFRESH,
+            "exit": DiskForgeIcons.EXIT,
+            "clone_disk": DiskForgeIcons.CLONE_DISK,
+            "clone_partition": DiskForgeIcons.CLONE_PARTITION,
+            "create_backup": DiskForgeIcons.CREATE_BACKUP,
+            "restore_backup": DiskForgeIcons.RESTORE_BACKUP,
+            "rescue_media": DiskForgeIcons.RESCUE_MEDIA,
+            "danger_mode": DiskForgeIcons.DANGER_MODE,
+            "about": DiskForgeIcons.ABOUT,
+            "create_partition": DiskForgeIcons.CREATE_PARTITION,
+            "format_partition": DiskForgeIcons.FORMAT_PARTITION,
+            "delete_partition": DiskForgeIcons.DELETE_PARTITION,
+        }
+
+        for action_key, icon_name in icon_map.items():
+            actions[action_key].setIcon(DiskForgeIcons.icon(icon_name))
 
         actions["refresh"].setShortcut("F5")
         actions["refresh"].triggered.connect(self._refresh_inventory)
@@ -215,23 +236,9 @@ class MainWindow(QMainWindow):
         sidebar_title.setObjectName("sidebarTitle")
         sidebar_layout.addWidget(sidebar_title)
 
-        def add_sidebar_button(text: str, slot: Any, primary: bool = False) -> None:
-            button = QPushButton(text)
-            if primary:
-                button.setObjectName("primaryAction")
-            button.clicked.connect(slot)
-            sidebar_layout.addWidget(button)
-
-        add_sidebar_button("Refresh Inventory", self._refresh_inventory, primary=True)
-        add_sidebar_button("Create Partition", self._on_create_partition)
-        add_sidebar_button("Format Partition", self._on_format_partition)
-        add_sidebar_button("Delete Partition", self._on_delete_partition)
-        add_sidebar_button("Clone Disk", self._on_clone_disk)
-        add_sidebar_button("Clone Partition", self._on_clone_partition)
-        add_sidebar_button("Create Backup", self._on_create_backup)
-        add_sidebar_button("Restore Backup", self._on_restore_backup)
-        add_sidebar_button("Create Rescue Media", self._on_create_rescue)
-        add_sidebar_button("Toggle Danger Mode", self._toggle_danger_mode)
+        operations_tree = OperationsTreeWidget(self._actions, sidebar)
+        operations_tree.setObjectName("operationsTree")
+        sidebar_layout.addWidget(operations_tree, stretch=1)
 
         sidebar_layout.addStretch()
         splitter.addWidget(sidebar)
@@ -268,12 +275,41 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         # Disk visualization
-        viz_group = QGroupBox("Disk Layout")
-        viz_layout = QVBoxLayout(viz_group)
-        self._disk_view = DiskGraphicsView()
-        self._disk_view.partitionSelected.connect(self._on_partition_selected)
-        viz_layout.addWidget(self._disk_view)
-        right_layout.addWidget(viz_group)
+        disk_panel = QFrame()
+        disk_panel.setObjectName("diskMapPanel")
+        disk_panel_layout = QVBoxLayout(disk_panel)
+        disk_panel_layout.setContentsMargins(12, 12, 12, 12)
+        disk_panel_layout.setSpacing(6)
+
+        disk_header_layout = QHBoxLayout()
+        disk_title = QLabel("Disk Map")
+        disk_title.setObjectName("sectionTitle")
+        disk_header_layout.addWidget(disk_title)
+        disk_header_layout.addStretch()
+
+        def add_map_action(text: str, slot: Any) -> None:
+            button = QPushButton(text)
+            button.setObjectName("mapActionButton")
+            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            button.clicked.connect(slot)
+            disk_header_layout.addWidget(button)
+
+        add_map_action("Refresh", self._refresh_inventory)
+        add_map_action("Create", self._on_create_partition)
+        add_map_action("Format", self._on_format_partition)
+        add_map_action("Delete", self._on_delete_partition)
+
+        disk_panel_layout.addLayout(disk_header_layout)
+
+        self._disk_map_subtitle = QLabel("Select a disk to view the map")
+        self._disk_map_subtitle.setObjectName("diskMapSubtitle")
+        disk_panel_layout.addWidget(self._disk_map_subtitle)
+
+        self._disk_map = DiskMapWidget()
+        self._disk_map.partitionSelected.connect(self._on_partition_selected)
+        disk_panel_layout.addWidget(self._disk_map)
+
+        right_layout.addWidget(disk_panel)
 
         # Details panel
         details_group = QGroupBox("Details")
@@ -282,6 +318,16 @@ class MainWindow(QMainWindow):
         self._details_label.setWordWrap(True)
         details_layout.addWidget(self._details_label)
         right_layout.addWidget(details_group)
+
+        # Pending operations panel
+        pending_group = QGroupBox("Pending Operations")
+        pending_layout = QVBoxLayout(pending_group)
+        self._pending_widget = PendingOperationsWidget()
+        self._pending_widget.setModel(self._pending_model)
+        self._pending_widget.applyRequested.connect(self._apply_pending_operations)
+        self._pending_widget.undoRequested.connect(self._pending_model.undoLastOperation)
+        pending_layout.addWidget(self._pending_widget)
+        right_layout.addWidget(pending_group)
 
         # Progress panel
         progress_group = QGroupBox("Operation Progress")
@@ -315,6 +361,21 @@ class MainWindow(QMainWindow):
         splitter.setSizes([220, 380, 640])
 
         main_layout.addWidget(splitter)
+
+    def _apply_pending_operations(self) -> None:
+        """Submit pending operations to the job runner."""
+        pending_jobs = self._pending_model.takeOperations()
+        if not pending_jobs:
+            return
+
+        for job in pending_jobs:
+            self._session.submit_job(job)
+            self._job_model.addJob(job)
+
+        if hasattr(self, "_status_label"):
+            count = len(pending_jobs)
+            noun = "operation" if count == 1 else "operations"
+            self._status_label.setText(f"Applied {count} {noun}.")
 
     def _apply_aomei_theme(self) -> None:
         """Apply an AOMEI-inspired theme to the main window."""
@@ -381,7 +442,7 @@ class MainWindow(QMainWindow):
         indexes = self._disk_tree.selectionModel().selectedIndexes()
         if not indexes:
             self._details_label.setText("Select a disk or partition")
-            self._disk_view.setDisk(None)
+            self._set_disk_map(None)
             return
 
         item = self._disk_model.getItemAtIndex(indexes[0])
@@ -390,9 +451,13 @@ class MainWindow(QMainWindow):
 
         if isinstance(item, Disk):
             self._show_disk_details(item)
-            self._disk_view.setDisk(item)
+            self._set_disk_map(item)
         elif isinstance(item, Partition):
             self._show_partition_details(item)
+            parent_index = indexes[0].parent()
+            parent_item = self._disk_model.getItemAtIndex(parent_index) if parent_index.isValid() else None
+            if isinstance(parent_item, Disk):
+                self._set_disk_map(parent_item)
 
     def _show_disk_details(self, disk: Disk) -> None:
         """Show disk details in the details panel."""
@@ -424,6 +489,19 @@ class MainWindow(QMainWindow):
 </table>"""
         self._details_label.setText(text)
 
+    def _set_disk_map(self, disk: Disk | None) -> None:
+        """Update the disk map widget and its header."""
+        self._disk_map.setDisk(disk)
+        if disk is None:
+            self._disk_map_subtitle.setText("Select a disk to view the map")
+            return
+
+        size_text = humanize.naturalsize(disk.size_bytes, binary=True)
+        model_text = disk.model or "Unknown model"
+        self._disk_map_subtitle.setText(
+            f"{disk.device_path} • {model_text} • {size_text} • {disk.partition_style.name}"
+        )
+
     @Slot(Partition)
     def _on_partition_selected(self, partition: Partition) -> None:
         """Handle partition selection from graphics view."""
@@ -440,32 +518,54 @@ class MainWindow(QMainWindow):
             return
 
         menu = QMenu(self)
+        menu.setIconSize(DiskForgeIcons.MENU_SIZE)
 
         if isinstance(item, Disk):
-            clone_action = menu.addAction("Clone Disk...")
+            clone_action = menu.addAction(
+                self._actions["clone_disk"].icon(),
+                "Clone Disk...",
+            )
             clone_action.triggered.connect(lambda: self._clone_disk(item))
 
-            backup_action = menu.addAction("Create Backup...")
+            backup_action = menu.addAction(
+                self._actions["create_backup"].icon(),
+                "Create Backup...",
+            )
             backup_action.triggered.connect(lambda: self._backup_device(item.device_path))
 
             menu.addSeparator()
 
-            create_part_action = menu.addAction("Create Partition...")
+            create_part_action = menu.addAction(
+                self._actions["create_partition"].icon(),
+                "Create Partition...",
+            )
             create_part_action.triggered.connect(lambda: self._create_partition(item))
 
         elif isinstance(item, Partition):
-            clone_action = menu.addAction("Clone Partition...")
+            clone_action = menu.addAction(
+                self._actions["clone_partition"].icon(),
+                "Clone Partition...",
+            )
             clone_action.triggered.connect(lambda: self._clone_partition(item))
 
-            backup_action = menu.addAction("Create Backup...")
+            backup_action = menu.addAction(
+                self._actions["create_backup"].icon(),
+                "Create Backup...",
+            )
             backup_action.triggered.connect(lambda: self._backup_device(item.device_path))
 
             menu.addSeparator()
 
-            format_action = menu.addAction("Format...")
+            format_action = menu.addAction(
+                self._actions["format_partition"].icon(),
+                "Format...",
+            )
             format_action.triggered.connect(lambda: self._format_partition(item))
 
-            delete_action = menu.addAction("Delete")
+            delete_action = menu.addAction(
+                self._actions["delete_partition"].icon(),
+                "Delete",
+            )
             delete_action.triggered.connect(lambda: self._delete_partition(item))
 
         menu.exec(self._disk_tree.mapToGlobal(pos))
