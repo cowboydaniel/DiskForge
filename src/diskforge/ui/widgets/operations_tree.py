@@ -40,10 +40,23 @@ class OperationsTreeWidget(QTreeView):
     def _build_tree(self) -> None:
         self._model.clear()
 
+        wizard_icon = self._icon("applications-system", QStyle.SP_ComputerIcon)
         partition_icon = self._icon("drive-harddisk", QStyle.SP_DriveHDIcon)
         backup_icon = self._icon("document-save", QStyle.SP_DialogSaveButton)
-        clone_icon = self._icon("edit-copy", QStyle.SP_FileDialogNewFolder)
         tools_icon = self._icon("preferences-system", QStyle.SP_ToolBarHorizontalExtensionButton)
+
+        self._add_category(
+            "Wizards",
+            wizard_icon,
+            [
+                ("Copy Disk Wizard", "clone_disk", self._icon("drive-harddisk", QStyle.SP_DriveHDIcon)),
+                (
+                    "Copy Partition Wizard",
+                    "clone_partition",
+                    self._icon("drive-removable-media", QStyle.SP_DriveFDIcon),
+                ),
+            ],
+        )
 
         self._add_category(
             "Partition Operations",
@@ -60,24 +73,11 @@ class OperationsTreeWidget(QTreeView):
         )
 
         self._add_category(
-            "Backup",
+            "Backup & Restore",
             backup_icon,
             [
-                ("Create Backup", "create_backup", self._icon("document-save", QStyle.SP_DialogSaveButton)),
-                ("Restore Backup", "restore_backup", self._icon("document-open", QStyle.SP_DirOpenIcon)),
-            ],
-        )
-
-        self._add_category(
-            "Clone",
-            clone_icon,
-            [
-                ("Clone Disk", "clone_disk", self._icon("drive-harddisk", QStyle.SP_DriveHDIcon)),
-                (
-                    "Clone Partition",
-                    "clone_partition",
-                    self._icon("drive-removable-media", QStyle.SP_DriveFDIcon),
-                ),
+                ("Disk Backup", "create_backup", self._icon("document-save", QStyle.SP_DialogSaveButton)),
+                ("Disk Restore", "restore_backup", self._icon("document-open", QStyle.SP_DirOpenIcon)),
             ],
         )
 
@@ -85,9 +85,9 @@ class OperationsTreeWidget(QTreeView):
             "Tools",
             tools_icon,
             [
-                ("Refresh Inventory", "refresh", self._icon("view-refresh", QStyle.SP_BrowserReload)),
+                ("Refresh", "refresh", self._icon("view-refresh", QStyle.SP_BrowserReload)),
                 (
-                    "Create Rescue Media",
+                    "Make Bootable Media",
                     "rescue_media",
                     self._icon("media-optical", QStyle.SP_DriveCDIcon),
                 ),
@@ -96,6 +96,8 @@ class OperationsTreeWidget(QTreeView):
                     "danger_mode",
                     self._icon("dialog-warning", QStyle.SP_MessageBoxWarning),
                 ),
+                ("About DiskForge", "about", self._icon("help-about", QStyle.SP_MessageBoxInformation)),
+                ("Exit", "exit", self._icon("application-exit", QStyle.SP_DialogCloseButton)),
             ],
         )
 

@@ -93,17 +93,17 @@ class MainWindow(QMainWindow):
             "refresh": QAction("Refresh", self),
             "exit": QAction("Exit", self),
             "clone": QAction("Clone", self),
-            "clone_disk": QAction("Clone Disk...", self),
-            "clone_partition": QAction("Clone Partition...", self),
-            "backup": QAction("Backup", self),
-            "create_backup": QAction("Create Backup...", self),
-            "restore_backup": QAction("Restore Backup...", self),
-            "rescue_media": QAction("Create Rescue Media...", self),
+            "clone_disk": QAction("Copy Disk Wizard...", self),
+            "clone_partition": QAction("Copy Partition Wizard...", self),
+            "backup": QAction("Disk Backup", self),
+            "create_backup": QAction("Disk Backup...", self),
+            "restore_backup": QAction("Disk Restore...", self),
+            "rescue_media": QAction("Make Bootable Media...", self),
             "danger_mode": QAction("Toggle Danger Mode", self),
-            "about": QAction("About", self),
-            "create_partition": QAction("Create Partition", self),
-            "format_partition": QAction("Format Partition", self),
-            "delete_partition": QAction("Delete Partition", self),
+            "about": QAction("About DiskForge", self),
+            "create_partition": QAction("Create Partition...", self),
+            "format_partition": QAction("Format Partition...", self),
+            "delete_partition": QAction("Delete Partition...", self),
         }
 
         icon_map = {
@@ -572,13 +572,13 @@ class MainWindow(QMainWindow):
         if isinstance(item, Disk):
             clone_action = menu.addAction(
                 self._actions["clone_disk"].icon(),
-                "Clone Disk...",
+                "Copy Disk Wizard...",
             )
             clone_action.triggered.connect(lambda: self._clone_disk(item))
 
             backup_action = menu.addAction(
                 self._actions["create_backup"].icon(),
-                "Create Backup...",
+                "Disk Backup...",
             )
             backup_action.triggered.connect(lambda: self._backup_device(item.device_path))
 
@@ -593,13 +593,13 @@ class MainWindow(QMainWindow):
         elif isinstance(item, Partition):
             clone_action = menu.addAction(
                 self._actions["clone_partition"].icon(),
-                "Clone Partition...",
+                "Copy Partition Wizard...",
             )
             clone_action.triggered.connect(lambda: self._clone_partition(item))
 
             backup_action = menu.addAction(
                 self._actions["create_backup"].icon(),
-                "Create Backup...",
+                "Disk Backup...",
             )
             backup_action.triggered.connect(lambda: self._backup_device(item.device_path))
 
