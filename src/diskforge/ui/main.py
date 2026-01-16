@@ -7,10 +7,14 @@ Launches the PySide6 graphical user interface.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Any
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+if __package__ is None:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QApplication, QMessageBox
 
 from diskforge import __version__
 from diskforge.core.config import load_config
