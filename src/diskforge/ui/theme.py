@@ -90,6 +90,38 @@ class AomeiTheme:
             border-bottom: 1px solid {self.colors.border};
             spacing: {self.spacing.toolbar_spacing_px}px;
         }}
+        #ribbon {{
+            background-color: {self.colors.surface_muted};
+            border-bottom: 1px solid {self.colors.border};
+        }}
+        #ribbonTabs::pane {{
+            border: none;
+        }}
+        #ribbonTabs QTabBar::tab {{
+            background-color: {self.colors.brand_primary_soft};
+            color: {self.colors.text_primary};
+            padding: 6px 14px;
+            border: 1px solid {self.colors.border};
+            border-bottom: none;
+            margin-right: 4px;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+        }}
+        #ribbonTabs QTabBar::tab:selected {{
+            background-color: {self.colors.surface};
+            color: {self.colors.brand_primary_dark};
+            font-weight: {self.typography.section_weight};
+        }}
+        #ribbon QToolButton {{
+            background-color: {self.colors.surface};
+            border: 1px solid {self.colors.border_soft};
+            padding: 6px;
+            border-radius: {self.radii.button_px}px;
+        }}
+        #ribbon QToolButton:hover {{
+            border-color: {self.colors.brand_primary};
+            color: {self.colors.brand_primary};
+        }}
         QStatusBar {{
             background-color: {self.colors.surface_muted};
             border-top: 1px solid {self.colors.border};
