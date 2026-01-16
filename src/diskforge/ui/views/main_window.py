@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QGroupBox,
     QComboBox,
-    QPushButton,
     QInputDialog,
     QHeaderView,
     QFrame,
@@ -43,6 +42,7 @@ from diskforge.ui.assets import DiskForgeIcons
 from diskforge.ui.theme import aomei_qss
 from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
 from diskforge.ui.widgets.disk_view import DiskGraphicsView
+from diskforge.ui.widgets.operations_tree import OperationsTreeWidget
 from diskforge.ui.widgets.progress_widget import ProgressWidget
 from diskforge.ui.widgets.ribbon import RibbonWidget
 
@@ -227,67 +227,9 @@ class MainWindow(QMainWindow):
         sidebar_title.setObjectName("sidebarTitle")
         sidebar_layout.addWidget(sidebar_title)
 
-        def add_sidebar_button(
-            text: str,
-            slot: Any,
-            icon: QIcon,
-            primary: bool = False,
-        ) -> None:
-            button = QPushButton(text)
-            button.setIcon(icon)
-            button.setIconSize(DiskForgeIcons.NAV_SIZE)
-            if primary:
-                button.setObjectName("primaryAction")
-            button.clicked.connect(slot)
-            sidebar_layout.addWidget(button)
-
-        add_sidebar_button(
-            "Refresh Inventory",
-            self._refresh_inventory,
-            self._actions["refresh"].icon(),
-            primary=True,
-        )
-        add_sidebar_button(
-            "Create Partition",
-            self._on_create_partition,
-            self._actions["create_partition"].icon(),
-        )
-        add_sidebar_button(
-            "Format Partition",
-            self._on_format_partition,
-            self._actions["format_partition"].icon(),
-        )
-        add_sidebar_button(
-            "Delete Partition",
-            self._on_delete_partition,
-            self._actions["delete_partition"].icon(),
-        )
-        add_sidebar_button("Clone Disk", self._on_clone_disk, self._actions["clone_disk"].icon())
-        add_sidebar_button(
-            "Clone Partition",
-            self._on_clone_partition,
-            self._actions["clone_partition"].icon(),
-        )
-        add_sidebar_button(
-            "Create Backup",
-            self._on_create_backup,
-            self._actions["create_backup"].icon(),
-        )
-        add_sidebar_button(
-            "Restore Backup",
-            self._on_restore_backup,
-            self._actions["restore_backup"].icon(),
-        )
-        add_sidebar_button(
-            "Create Rescue Media",
-            self._on_create_rescue,
-            self._actions["rescue_media"].icon(),
-        )
-        add_sidebar_button(
-            "Toggle Danger Mode",
-            self._toggle_danger_mode,
-            self._actions["danger_mode"].icon(),
-        )
+        operations_tree = OperationsTreeWidget(self._actions, sidebar)
+        operations_tree.setObjectName("operationsTree")
+        sidebar_layout.addWidget(operations_tree, stretch=1)
 
         sidebar_layout.addStretch()
         splitter.addWidget(sidebar)
