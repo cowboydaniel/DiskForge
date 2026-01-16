@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QPushButton,
     QInputDialog,
     QHeaderView,
+    QFrame,
+    QSizePolicy,
 )
 from PySide6.QtCore import Qt, QTimer, Slot, QModelIndex
 from PySide6.QtGui import QAction, QIcon
@@ -60,10 +62,12 @@ class MainWindow(QMainWindow):
         self._job_model = JobModel(session.job_runner, self)
 
         # Set up UI
+        self._apply_aomei_theme()
         self._setup_menubar()
         self._setup_toolbar()
         self._setup_central_widget()
         self._setup_statusbar()
+        self._update_danger_mode_indicator()
 
         # Refresh timer
         self._refresh_timer = QTimer(self)
@@ -146,15 +150,6 @@ class MainWindow(QMainWindow):
 
         toolbar.addSeparator()
 
-        # Danger mode indicator
-        self._danger_label = QLabel("SAFE MODE")
-        self._danger_label.setStyleSheet(
-            "background-color: green; color: white; padding: 4px; font-weight: bold;"
-        )
-        toolbar.addWidget(self._danger_label)
-
-        toolbar.addSeparator()
-
         # Quick actions
         create_part_action = QAction("Create Partition", self)
         create_part_action.triggered.connect(self._on_create_partition)
@@ -174,9 +169,68 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         main_layout = QVBoxLayout(central)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        header_bar = QFrame()
+        header_bar.setObjectName("headerBar")
+        header_layout = QHBoxLayout(header_bar)
+        header_layout.setContentsMargins(16, 10, 16, 10)
+        header_layout.setSpacing(12)
+
+        title_block = QVBoxLayout()
+        title_label = QLabel("DiskForge")
+        title_label.setObjectName("appTitle")
+        subtitle_label = QLabel("Disk management workspace")
+        subtitle_label.setObjectName("appSubtitle")
+        title_block.addWidget(title_label)
+        title_block.addWidget(subtitle_label)
+        title_block.setSpacing(2)
+
+        header_layout.addLayout(title_block)
+        header_layout.addStretch()
+
+        self._danger_label = QLabel("SAFE MODE")
+        self._danger_label.setObjectName("modeBadge")
+        self._danger_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        header_layout.addWidget(self._danger_label)
+
+        main_layout.addWidget(header_bar)
 
         # Main splitter
         splitter = QSplitter(Qt.Horizontal)
+        splitter.setObjectName("mainSplitter")
+
+        sidebar = QFrame()
+        sidebar.setObjectName("sidebar")
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(14, 14, 14, 14)
+        sidebar_layout.setSpacing(8)
+
+        sidebar_title = QLabel("Operations")
+        sidebar_title.setObjectName("sidebarTitle")
+        sidebar_layout.addWidget(sidebar_title)
+
+        def add_sidebar_button(text: str, slot: Any, primary: bool = False) -> None:
+            button = QPushButton(text)
+            if primary:
+                button.setObjectName("primaryAction")
+            button.clicked.connect(slot)
+            sidebar_layout.addWidget(button)
+
+        add_sidebar_button("Refresh Inventory", self._refresh_inventory, primary=True)
+        add_sidebar_button("Create Partition", self._on_create_partition)
+        add_sidebar_button("Format Partition", self._on_format_partition)
+        add_sidebar_button("Delete Partition", self._on_delete_partition)
+        add_sidebar_button("Clone Disk", self._on_clone_disk)
+        add_sidebar_button("Clone Partition", self._on_clone_partition)
+        add_sidebar_button("Create Backup", self._on_create_backup)
+        add_sidebar_button("Restore Backup", self._on_restore_backup)
+        add_sidebar_button("Create Rescue Media", self._on_create_rescue)
+        add_sidebar_button("Toggle Danger Mode", self._toggle_danger_mode)
+
+        sidebar_layout.addStretch()
+        splitter.addWidget(sidebar)
 
         # Left panel - disk tree
         left_panel = QWidget()
@@ -254,9 +308,122 @@ class MainWindow(QMainWindow):
         splitter.addWidget(right_panel)
 
         # Set splitter sizes
-        splitter.setSizes([400, 600])
+        splitter.setSizes([220, 380, 640])
 
         main_layout.addWidget(splitter)
+
+    def _apply_aomei_theme(self) -> None:
+        """Apply an AOMEI-inspired theme to the main window."""
+        self.setStyleSheet(
+            """
+            QMainWindow {
+                background-color: #f5f7fb;
+                color: #1f2a44;
+            }
+            QMenuBar {
+                background-color: #1e6fd9;
+                color: white;
+                padding: 4px;
+            }
+            QMenuBar::item:selected {
+                background-color: #1559ad;
+            }
+            QMenu {
+                background-color: white;
+                border: 1px solid #d9e1f0;
+            }
+            QToolBar {
+                background-color: #f0f4fb;
+                border-bottom: 1px solid #d9e1f0;
+                spacing: 8px;
+            }
+            QStatusBar {
+                background-color: #f0f4fb;
+                border-top: 1px solid #d9e1f0;
+            }
+            #headerBar {
+                background-color: #1e6fd9;
+            }
+            #appTitle {
+                color: white;
+                font-size: 18px;
+                font-weight: 700;
+            }
+            #appSubtitle {
+                color: #dbe8ff;
+                font-size: 11px;
+            }
+            #modeBadge {
+                background-color: #1fb456;
+                color: white;
+                padding: 6px 12px;
+                border-radius: 12px;
+                font-weight: 700;
+            }
+            #modeBadge[danger="true"] {
+                background-color: #d94242;
+            }
+            #modeBadge[danger="false"] {
+                background-color: #1fb456;
+            }
+            #sidebar {
+                background-color: #eef3fb;
+                border-right: 1px solid #d9e1f0;
+            }
+            #sidebarTitle {
+                color: #1f2a44;
+                font-weight: 700;
+                padding: 4px 0;
+            }
+            QGroupBox {
+                border: 1px solid #d9e1f0;
+                border-radius: 6px;
+                margin-top: 12px;
+                padding-top: 8px;
+                background-color: white;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 6px;
+                color: #1f2a44;
+                font-weight: 600;
+            }
+            QTreeView,
+            QTableView {
+                border: 1px solid #d9e1f0;
+                background-color: white;
+                alternate-background-color: #f4f7fc;
+                selection-background-color: #1e6fd9;
+                selection-color: white;
+            }
+            QLabel {
+                color: #1f2a44;
+            }
+            QPushButton {
+                background-color: white;
+                border: 1px solid #c7d3ea;
+                padding: 6px 10px;
+                border-radius: 4px;
+                text-align: left;
+            }
+            QPushButton:hover {
+                border-color: #1e6fd9;
+                color: #1e6fd9;
+            }
+            QPushButton#primaryAction {
+                background-color: #1e6fd9;
+                border-color: #1e6fd9;
+                color: white;
+                font-weight: 600;
+            }
+            QPushButton#primaryAction:hover {
+                background-color: #1559ad;
+                border-color: #1559ad;
+                color: white;
+            }
+            """
+        )
 
     def _setup_statusbar(self) -> None:
         """Set up the status bar."""
@@ -288,14 +455,12 @@ class MainWindow(QMainWindow):
         mode = self._session.danger_mode
         if mode == DangerMode.DISABLED:
             self._danger_label.setText("SAFE MODE")
-            self._danger_label.setStyleSheet(
-                "background-color: green; color: white; padding: 4px; font-weight: bold;"
-            )
+            self._danger_label.setProperty("danger", False)
         else:
             self._danger_label.setText("⚠️ DANGER MODE")
-            self._danger_label.setStyleSheet(
-                "background-color: red; color: white; padding: 4px; font-weight: bold;"
-            )
+            self._danger_label.setProperty("danger", True)
+        self._danger_label.style().unpolish(self._danger_label)
+        self._danger_label.style().polish(self._danger_label)
 
     @Slot()
     def _refresh_inventory(self) -> None:
