@@ -43,7 +43,7 @@ from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
 from diskforge.ui.widgets.disk_view import DiskMapWidget
 from diskforge.ui.widgets.operations_tree import OperationsTreeWidget
 from diskforge.ui.widgets.progress_widget import ProgressWidget, PendingOperationsWidget
-from diskforge.ui.widgets.ribbon import RibbonWidget
+from diskforge.ui.widgets.ribbon import RibbonWidget, RibbonButton, RibbonGroup
 from diskforge.ui.views.wizards import (
     CreatePartitionWizard,
     FormatPartitionWizard,
@@ -92,8 +92,10 @@ class MainWindow(QMainWindow):
         actions = {
             "refresh": QAction("Refresh", self),
             "exit": QAction("Exit", self),
+            "clone": QAction("Clone", self),
             "clone_disk": QAction("Clone Disk...", self),
             "clone_partition": QAction("Clone Partition...", self),
+            "backup": QAction("Backup", self),
             "create_backup": QAction("Create Backup...", self),
             "restore_backup": QAction("Restore Backup...", self),
             "rescue_media": QAction("Create Rescue Media...", self),
@@ -107,8 +109,10 @@ class MainWindow(QMainWindow):
         icon_map = {
             "refresh": DiskForgeIcons.REFRESH,
             "exit": DiskForgeIcons.EXIT,
+            "clone": DiskForgeIcons.CLONE_DISK,
             "clone_disk": DiskForgeIcons.CLONE_DISK,
             "clone_partition": DiskForgeIcons.CLONE_PARTITION,
+            "backup": DiskForgeIcons.CREATE_BACKUP,
             "create_backup": DiskForgeIcons.CREATE_BACKUP,
             "restore_backup": DiskForgeIcons.RESTORE_BACKUP,
             "rescue_media": DiskForgeIcons.RESCUE_MEDIA,
@@ -138,6 +142,8 @@ class MainWindow(QMainWindow):
         actions["create_partition"].triggered.connect(self._on_create_partition)
         actions["format_partition"].triggered.connect(self._on_format_partition)
         actions["delete_partition"].triggered.connect(self._on_delete_partition)
+        actions["clone"].triggered.connect(self._on_clone_disk)
+        actions["backup"].triggered.connect(self._on_create_backup)
 
         return actions
 
@@ -147,32 +153,65 @@ class MainWindow(QMainWindow):
         ribbon.add_tab(
             "Home",
             [
-                ("Inventory", [self._actions["refresh"]]),
-                (
-                    "Partitions",
-                    [
-                        self._actions["create_partition"],
-                        self._actions["format_partition"],
-                        self._actions["delete_partition"],
+                RibbonGroup(
+                    "Common",
+                    columns=[
+                        [RibbonButton(self._actions["refresh"])],
+                        [
+                            RibbonButton(self._actions["about"], size="small"),
+                            RibbonButton(self._actions["exit"], size="small"),
+                        ],
                     ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Partition Operations",
+                    columns=[
+                        [RibbonButton(self._actions["create_partition"])],
+                        [
+                            RibbonButton(self._actions["format_partition"], size="small"),
+                            RibbonButton(self._actions["delete_partition"], size="small"),
+                        ],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Safety",
+                    columns=[[RibbonButton(self._actions["danger_mode"], size="small")]],
+                ),
+            ],
+        )
+        ribbon.add_tab(
+            "Backup",
+            [
+                RibbonGroup(
+                    "Backup",
+                    columns=[[RibbonButton(self._actions["backup"])]],
+                ),
+            ],
+        )
+        ribbon.add_tab(
+            "Restore",
+            [
+                RibbonGroup(
+                    "Restore",
+                    columns=[[RibbonButton(self._actions["restore_backup"])]],
                 ),
             ],
         )
         ribbon.add_tab(
             "Clone",
             [
-                ("Clone", [self._actions["clone_disk"], self._actions["clone_partition"]]),
-            ],
-        )
-        ribbon.add_tab(
-            "Backup",
-            [
-                (
-                    "Backup & Restore",
-                    [
-                        self._actions["create_backup"],
-                        self._actions["restore_backup"],
-                        self._actions["rescue_media"],
+                RibbonGroup(
+                    "Clone",
+                    columns=[
+                        [
+                            RibbonButton(
+                                self._actions["clone"],
+                                split_actions=[self._actions["clone_disk"], self._actions["clone_partition"]],
+                            )
+                        ],
+                        [RibbonButton(self._actions["clone_partition"], size="small")],
                     ],
                 ),
             ],
@@ -180,9 +219,18 @@ class MainWindow(QMainWindow):
         ribbon.add_tab(
             "Tools",
             [
-                ("Safety", [self._actions["danger_mode"]]),
-                ("Support", [self._actions["about"]]),
-                ("Session", [self._actions["exit"]]),
+                RibbonGroup(
+                    "Utilities",
+                    columns=[
+                        [RibbonButton(self._actions["rescue_media"])],
+                        [RibbonButton(self._actions["danger_mode"], size="small")],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Session",
+                    columns=[[RibbonButton(self._actions["exit"], size="small")]],
+                ),
             ],
         )
 
