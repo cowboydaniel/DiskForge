@@ -168,16 +168,53 @@ class AomeiTheme:
         }}
         #headerBar {{
             background-color: {self.colors.brand_primary};
+            border-bottom: 1px solid {self.colors.brand_primary_dark};
+        }}
+        #headerBar QLabel {{
+            color: {self.colors.text_inverted};
+        }}
+        #appLogo {{
+            background-color: {self.colors.text_inverted};
+            color: {self.colors.brand_primary};
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: {self.typography.title_weight};
         }}
         #appTitle {{
             color: {self.colors.text_inverted};
             font-size: {self.typography.title_size_px}px;
             font-weight: {self.typography.title_weight};
+            letter-spacing: 0.4px;
         }}
         #appSubtitle {{
             color: {self.colors.text_muted};
             font-size: {self.typography.subtitle_size_px}px;
             font-weight: {self.typography.subtitle_weight};
+        }}
+        #headerActionButton {{
+            color: {self.colors.text_inverted};
+            border: 1px solid transparent;
+            padding: 4px 10px;
+            border-radius: {self.radii.button_px}px;
+            text-align: center;
+        }}
+        #headerActionButton:hover {{
+            background-color: {self.colors.brand_primary_dark};
+            border-color: {self.colors.brand_primary_dark};
+        }}
+        #headerActionButton:pressed {{
+            background-color: {self.colors.brand_primary_dark};
+            border-color: {self.colors.brand_primary_dark};
+        }}
+        #headerActionButton:disabled {{
+            color: {self.colors.text_muted};
+        }}
+        #versionBadge {{
+            background-color: {self.colors.text_inverted};
+            color: {self.colors.brand_primary_dark};
+            padding: 2px 8px;
+            border-radius: {self.radii.badge_px}px;
+            font-weight: {self.typography.badge_weight};
         }}
         #modeBadge {{
             background-color: {self.colors.brand_accent};
@@ -367,8 +404,8 @@ AOMEI_THEME = AomeiTheme(
         text_muted="#bcd3f5",
     ),
     typography=ThemeTypography(
-        title_size_px=18,
-        subtitle_size_px=12,
+        title_size_px=20,
+        subtitle_size_px=11,
         title_weight=700,
         subtitle_weight=500,
         badge_weight=600,

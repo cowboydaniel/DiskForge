@@ -248,8 +248,13 @@ class MainWindow(QMainWindow):
         header_bar = QFrame()
         header_bar.setObjectName("headerBar")
         header_layout = QHBoxLayout(header_bar)
-        header_layout.setContentsMargins(16, 10, 16, 10)
-        header_layout.setSpacing(12)
+        header_layout.setContentsMargins(20, 12, 20, 12)
+        header_layout.setSpacing(16)
+
+        logo_label = QLabel("DF")
+        logo_label.setObjectName("appLogo")
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setFixedSize(44, 44)
 
         title_block = QVBoxLayout()
         title_label = QLabel("DiskForge")
@@ -258,15 +263,41 @@ class MainWindow(QMainWindow):
         subtitle_label.setObjectName("appSubtitle")
         title_block.addWidget(title_label)
         title_block.addWidget(subtitle_label)
-        title_block.setSpacing(2)
+        title_block.setSpacing(0)
 
-        header_layout.addLayout(title_block)
+        left_header_layout = QHBoxLayout()
+        left_header_layout.setSpacing(12)
+        left_header_layout.addWidget(logo_label)
+        left_header_layout.addLayout(title_block)
+
+        header_layout.addLayout(left_header_layout)
         header_layout.addStretch()
+
+        right_header_layout = QHBoxLayout()
+        right_header_layout.setSpacing(8)
+
+        def add_header_action(action: QAction, label: str) -> None:
+            button = QPushButton(label)
+            button.setObjectName("headerActionButton")
+            button.setIcon(action.icon())
+            button.setFlat(True)
+            button.clicked.connect(action.trigger)
+            right_header_layout.addWidget(button)
+
+        add_header_action(self._actions["refresh"], "Refresh")
+        add_header_action(self._actions["about"], "About")
+
+        version_badge = QLabel(f"v{__version__}")
+        version_badge.setObjectName("versionBadge")
+        version_badge.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        right_header_layout.addWidget(version_badge)
 
         self._danger_label = QLabel("SAFE MODE")
         self._danger_label.setObjectName("modeBadge")
         self._danger_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        header_layout.addWidget(self._danger_label)
+        right_header_layout.addWidget(self._danger_label)
+
+        header_layout.addLayout(right_header_layout)
 
         main_layout.addWidget(header_bar)
         main_layout.addWidget(self._ribbon)
