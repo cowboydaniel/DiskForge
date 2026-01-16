@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from diskforge.ui.assets import DiskForgeIcons
+
 
 class RibbonWidget(QFrame):
     """AOMEI-style ribbon with tabs and grouped actions."""
@@ -52,6 +54,7 @@ class RibbonWidget(QFrame):
                 button.setDefaultAction(action)
                 button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
                 button.setAutoRaise(True)
+                button.setIconSize(DiskForgeIcons.RIBBON_SIZE)
                 button.setMinimumWidth(120)
                 group_layout.addWidget(button)
 
