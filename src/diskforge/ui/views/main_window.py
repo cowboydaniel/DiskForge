@@ -39,6 +39,7 @@ from diskforge.core.safety import DangerMode
 from diskforge.core.session import Session
 from diskforge.ui.models.disk_model import DiskModel
 from diskforge.ui.models.job_model import JobModel
+from diskforge.ui.assets import DiskForgeIcons
 from diskforge.ui.theme import aomei_qss
 from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
 from diskforge.ui.widgets.disk_view import DiskGraphicsView
@@ -92,6 +93,24 @@ class MainWindow(QMainWindow):
             "format_partition": QAction("Format Partition", self),
             "delete_partition": QAction("Delete Partition", self),
         }
+
+        icon_map = {
+            "refresh": DiskForgeIcons.REFRESH,
+            "exit": DiskForgeIcons.EXIT,
+            "clone_disk": DiskForgeIcons.CLONE_DISK,
+            "clone_partition": DiskForgeIcons.CLONE_PARTITION,
+            "create_backup": DiskForgeIcons.CREATE_BACKUP,
+            "restore_backup": DiskForgeIcons.RESTORE_BACKUP,
+            "rescue_media": DiskForgeIcons.RESCUE_MEDIA,
+            "danger_mode": DiskForgeIcons.DANGER_MODE,
+            "about": DiskForgeIcons.ABOUT,
+            "create_partition": DiskForgeIcons.CREATE_PARTITION,
+            "format_partition": DiskForgeIcons.FORMAT_PARTITION,
+            "delete_partition": DiskForgeIcons.DELETE_PARTITION,
+        }
+
+        for action_key, icon_name in icon_map.items():
+            actions[action_key].setIcon(DiskForgeIcons.icon(icon_name))
 
         actions["refresh"].setShortcut("F5")
         actions["refresh"].triggered.connect(self._refresh_inventory)
@@ -208,23 +227,67 @@ class MainWindow(QMainWindow):
         sidebar_title.setObjectName("sidebarTitle")
         sidebar_layout.addWidget(sidebar_title)
 
-        def add_sidebar_button(text: str, slot: Any, primary: bool = False) -> None:
+        def add_sidebar_button(
+            text: str,
+            slot: Any,
+            icon: QIcon,
+            primary: bool = False,
+        ) -> None:
             button = QPushButton(text)
+            button.setIcon(icon)
+            button.setIconSize(DiskForgeIcons.NAV_SIZE)
             if primary:
                 button.setObjectName("primaryAction")
             button.clicked.connect(slot)
             sidebar_layout.addWidget(button)
 
-        add_sidebar_button("Refresh Inventory", self._refresh_inventory, primary=True)
-        add_sidebar_button("Create Partition", self._on_create_partition)
-        add_sidebar_button("Format Partition", self._on_format_partition)
-        add_sidebar_button("Delete Partition", self._on_delete_partition)
-        add_sidebar_button("Clone Disk", self._on_clone_disk)
-        add_sidebar_button("Clone Partition", self._on_clone_partition)
-        add_sidebar_button("Create Backup", self._on_create_backup)
-        add_sidebar_button("Restore Backup", self._on_restore_backup)
-        add_sidebar_button("Create Rescue Media", self._on_create_rescue)
-        add_sidebar_button("Toggle Danger Mode", self._toggle_danger_mode)
+        add_sidebar_button(
+            "Refresh Inventory",
+            self._refresh_inventory,
+            self._actions["refresh"].icon(),
+            primary=True,
+        )
+        add_sidebar_button(
+            "Create Partition",
+            self._on_create_partition,
+            self._actions["create_partition"].icon(),
+        )
+        add_sidebar_button(
+            "Format Partition",
+            self._on_format_partition,
+            self._actions["format_partition"].icon(),
+        )
+        add_sidebar_button(
+            "Delete Partition",
+            self._on_delete_partition,
+            self._actions["delete_partition"].icon(),
+        )
+        add_sidebar_button("Clone Disk", self._on_clone_disk, self._actions["clone_disk"].icon())
+        add_sidebar_button(
+            "Clone Partition",
+            self._on_clone_partition,
+            self._actions["clone_partition"].icon(),
+        )
+        add_sidebar_button(
+            "Create Backup",
+            self._on_create_backup,
+            self._actions["create_backup"].icon(),
+        )
+        add_sidebar_button(
+            "Restore Backup",
+            self._on_restore_backup,
+            self._actions["restore_backup"].icon(),
+        )
+        add_sidebar_button(
+            "Create Rescue Media",
+            self._on_create_rescue,
+            self._actions["rescue_media"].icon(),
+        )
+        add_sidebar_button(
+            "Toggle Danger Mode",
+            self._toggle_danger_mode,
+            self._actions["danger_mode"].icon(),
+        )
 
         sidebar_layout.addStretch()
         splitter.addWidget(sidebar)
@@ -433,32 +496,54 @@ class MainWindow(QMainWindow):
             return
 
         menu = QMenu(self)
+        menu.setIconSize(DiskForgeIcons.MENU_SIZE)
 
         if isinstance(item, Disk):
-            clone_action = menu.addAction("Clone Disk...")
+            clone_action = menu.addAction(
+                self._actions["clone_disk"].icon(),
+                "Clone Disk...",
+            )
             clone_action.triggered.connect(lambda: self._clone_disk(item))
 
-            backup_action = menu.addAction("Create Backup...")
+            backup_action = menu.addAction(
+                self._actions["create_backup"].icon(),
+                "Create Backup...",
+            )
             backup_action.triggered.connect(lambda: self._backup_device(item.device_path))
 
             menu.addSeparator()
 
-            create_part_action = menu.addAction("Create Partition...")
+            create_part_action = menu.addAction(
+                self._actions["create_partition"].icon(),
+                "Create Partition...",
+            )
             create_part_action.triggered.connect(lambda: self._create_partition(item))
 
         elif isinstance(item, Partition):
-            clone_action = menu.addAction("Clone Partition...")
+            clone_action = menu.addAction(
+                self._actions["clone_partition"].icon(),
+                "Clone Partition...",
+            )
             clone_action.triggered.connect(lambda: self._clone_partition(item))
 
-            backup_action = menu.addAction("Create Backup...")
+            backup_action = menu.addAction(
+                self._actions["create_backup"].icon(),
+                "Create Backup...",
+            )
             backup_action.triggered.connect(lambda: self._backup_device(item.device_path))
 
             menu.addSeparator()
 
-            format_action = menu.addAction("Format...")
+            format_action = menu.addAction(
+                self._actions["format_partition"].icon(),
+                "Format...",
+            )
             format_action.triggered.connect(lambda: self._format_partition(item))
 
-            delete_action = menu.addAction("Delete")
+            delete_action = menu.addAction(
+                self._actions["delete_partition"].icon(),
+                "Delete",
+            )
             delete_action.triggered.connect(lambda: self._delete_partition(item))
 
         menu.exec(self._disk_tree.mapToGlobal(pos))
