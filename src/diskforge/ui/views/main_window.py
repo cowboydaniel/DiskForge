@@ -37,13 +37,13 @@ from diskforge.core.models import Disk, FileSystem, Partition
 from diskforge.core.safety import DangerMode
 from diskforge.core.session import Session
 from diskforge.ui.models.disk_model import DiskModel
-from diskforge.ui.models.job_model import JobModel
+from diskforge.ui.models.job_model import JobModel, PendingOperationsModel
 from diskforge.ui.assets import DiskForgeIcons
 from diskforge.ui.theme import aomei_qss
 from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
 from diskforge.ui.widgets.disk_view import DiskMapWidget
 from diskforge.ui.widgets.operations_tree import OperationsTreeWidget
-from diskforge.ui.widgets.progress_widget import ProgressWidget
+from diskforge.ui.widgets.progress_widget import ProgressWidget, PendingOperationsWidget
 from diskforge.ui.widgets.ribbon import RibbonWidget
 
 
@@ -60,6 +60,7 @@ class MainWindow(QMainWindow):
         # Models
         self._disk_model = DiskModel(self)
         self._job_model = JobModel(session.job_runner, self)
+        self._pending_model = PendingOperationsModel(self)
 
         # Set up UI
         self._apply_aomei_theme()
@@ -310,6 +311,16 @@ class MainWindow(QMainWindow):
         details_layout.addWidget(self._details_label)
         right_layout.addWidget(details_group)
 
+        # Pending operations panel
+        pending_group = QGroupBox("Pending Operations")
+        pending_layout = QVBoxLayout(pending_group)
+        self._pending_widget = PendingOperationsWidget()
+        self._pending_widget.setModel(self._pending_model)
+        self._pending_widget.applyRequested.connect(self._apply_pending_operations)
+        self._pending_widget.undoRequested.connect(self._pending_model.undoLastOperation)
+        pending_layout.addWidget(self._pending_widget)
+        right_layout.addWidget(pending_group)
+
         # Progress panel
         progress_group = QGroupBox("Operation Progress")
         progress_layout = QVBoxLayout(progress_group)
@@ -342,6 +353,21 @@ class MainWindow(QMainWindow):
         splitter.setSizes([220, 380, 640])
 
         main_layout.addWidget(splitter)
+
+    def _apply_pending_operations(self) -> None:
+        """Submit pending operations to the job runner."""
+        pending_jobs = self._pending_model.takeOperations()
+        if not pending_jobs:
+            return
+
+        for job in pending_jobs:
+            self._session.submit_job(job)
+            self._job_model.addJob(job)
+
+        if hasattr(self, "_status_label"):
+            count = len(pending_jobs)
+            noun = "operation" if count == 1 else "operations"
+            self._status_label.setText(f"Applied {count} {noun}.")
 
     def _apply_aomei_theme(self) -> None:
         """Apply an AOMEI-inspired theme to the main window."""

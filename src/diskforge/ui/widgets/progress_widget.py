@@ -14,6 +14,8 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QFrame,
+    QTableView,
+    QHeaderView,
 )
 from PySide6.QtCore import Signal, Slot
 import humanize
@@ -159,3 +161,85 @@ class ProgressWidget(QWidget):
             self._is_paused = True
             self._pause_button.setText("Resume")
             self.pauseRequested.emit()
+
+
+class PendingOperationsWidget(QWidget):
+    """Widget showing pending operations with apply/undo controls."""
+
+    applyRequested = Signal()
+    undoRequested = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._model = None
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(8)
+
+        self._summary_label = QLabel("No pending operations.")
+        layout.addWidget(self._summary_label)
+
+        self._table = QTableView()
+        self._table.setSelectionBehavior(QTableView.SelectRows)
+        self._table.setSelectionMode(QTableView.SingleSelection)
+        self._table.setAlternatingRowColors(True)
+        self._table.setEditTriggers(QTableView.NoEditTriggers)
+        self._table.verticalHeader().setVisible(False)
+        layout.addWidget(self._table)
+
+        apply_bar = QFrame()
+        apply_layout = QHBoxLayout(apply_bar)
+        apply_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._pending_label = QLabel("Pending: 0")
+        apply_layout.addWidget(self._pending_label)
+
+        apply_layout.addStretch()
+
+        self._undo_button = QPushButton("Undo")
+        self._undo_button.clicked.connect(self.undoRequested.emit)
+        self._undo_button.setEnabled(False)
+        apply_layout.addWidget(self._undo_button)
+
+        self._apply_button = QPushButton("Apply")
+        self._apply_button.setObjectName("primaryAction")
+        self._apply_button.clicked.connect(self.applyRequested.emit)
+        self._apply_button.setEnabled(False)
+        apply_layout.addWidget(self._apply_button)
+
+        layout.addWidget(apply_bar)
+
+    def setModel(self, model: object) -> None:
+        """Attach a model that provides pending operations."""
+        self._model = model
+        self._table.setModel(model)
+
+        header = self._table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+
+        if hasattr(model, "pendingCountChanged"):
+            model.pendingCountChanged.connect(self._update_counts)
+
+        self._refresh_counts()
+
+    @Slot(int)
+    def _update_counts(self, count: int) -> None:
+        self._pending_label.setText(f"Pending: {count}")
+        if count == 0:
+            self._summary_label.setText("No pending operations.")
+        elif count == 1:
+            self._summary_label.setText("1 pending operation.")
+        else:
+            self._summary_label.setText(f"{count} pending operations.")
+        self._apply_button.setEnabled(count > 0)
+        self._undo_button.setEnabled(count > 0)
+
+    def _refresh_counts(self) -> None:
+        if self._model is None or not hasattr(self._model, "pendingCount"):
+            self._update_counts(0)
+            return
+        self._update_counts(self._model.pendingCount())

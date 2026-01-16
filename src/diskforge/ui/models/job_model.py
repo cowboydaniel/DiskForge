@@ -147,3 +147,110 @@ class JobModel(QAbstractTableModel):
             del self._jobs[i]
             del self._job_order[i]
             self.endRemoveRows()
+
+
+class PendingOperationsModel(QAbstractTableModel):
+    """Qt model for pending operations list."""
+
+    pendingCountChanged = Signal(int)
+
+    HEADERS = ["Operation", "Details"]
+
+    def __init__(self, parent: Any = None) -> None:
+        super().__init__(parent)
+        self._pending_jobs: list[Job[Any]] = []
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        if parent.isValid():
+            return 0
+        return len(self._pending_jobs)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return len(self.HEADERS)
+
+    def data(self, index: QModelIndex, role: int = Qt.DisplayRole) -> Any:
+        if not index.isValid() or index.row() >= len(self._pending_jobs):
+            return None
+
+        job = self._pending_jobs[index.row()]
+
+        if role == Qt.DisplayRole:
+            if index.column() == 0:
+                return job.name
+            if index.column() == 1:
+                plan = job.get_plan()
+                return plan if plan else job.description
+
+        if role == Qt.UserRole:
+            return job
+
+        return None
+
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.DisplayRole,
+    ) -> Any:
+        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
+            return self.HEADERS[section] if section < len(self.HEADERS) else None
+        return None
+
+    def flags(self, index: QModelIndex) -> Qt.ItemFlags:
+        if not index.isValid():
+            return Qt.NoItemFlags
+        return Qt.ItemIsEnabled | Qt.ItemIsSelectable
+
+    def pendingCount(self) -> int:
+        """Return the number of pending operations."""
+        return len(self._pending_jobs)
+
+    def addOperation(self, job: Job[Any]) -> None:
+        """Add a job to the pending operations list."""
+        row = len(self._pending_jobs)
+        self.beginInsertRows(QModelIndex(), row, row)
+        self._pending_jobs.append(job)
+        self.endInsertRows()
+        self.pendingCountChanged.emit(len(self._pending_jobs))
+
+    def getOperationAtRow(self, row: int) -> Job[Any] | None:
+        """Get pending operation at the specified row."""
+        if 0 <= row < len(self._pending_jobs):
+            return self._pending_jobs[row]
+        return None
+
+    def removeOperation(self, row: int) -> Job[Any] | None:
+        """Remove a pending operation by row."""
+        if row < 0 or row >= len(self._pending_jobs):
+            return None
+        self.beginRemoveRows(QModelIndex(), row, row)
+        job = self._pending_jobs.pop(row)
+        self.endRemoveRows()
+        self.pendingCountChanged.emit(len(self._pending_jobs))
+        return job
+
+    def undoLastOperation(self) -> Job[Any] | None:
+        """Undo the most recently added pending operation."""
+        if not self._pending_jobs:
+            return None
+        return self.removeOperation(len(self._pending_jobs) - 1)
+
+    def clearOperations(self) -> None:
+        """Clear all pending operations."""
+        if not self._pending_jobs:
+            return
+        self.beginResetModel()
+        self._pending_jobs.clear()
+        self.endResetModel()
+        self.pendingCountChanged.emit(len(self._pending_jobs))
+
+    def takeOperations(self) -> list[Job[Any]]:
+        """Remove and return all pending operations."""
+        if not self._pending_jobs:
+            return []
+        self.beginResetModel()
+        jobs = list(self._pending_jobs)
+        self._pending_jobs.clear()
+        self.endResetModel()
+        self.pendingCountChanged.emit(0)
+        return jobs
