@@ -21,28 +21,16 @@ A production-grade cross-platform disk management application for Windows 11+ an
 
 ## Installation
 
-### Using Poetry (recommended)
-
-```bash
-# Install Poetry if not already installed
-curl -sSL https://install.python-poetry.org | python3 -
-
-# Clone and install
-git clone https://github.com/diskforge/diskforge.git
-cd diskforge
-poetry install
-
-# Run the GUI
-poetry run diskforge-gui
-
-# Or use the CLI
-poetry run diskforge --help
-```
-
 ### Using pip
 
 ```bash
-pip install diskforge
+# Install from PyPI
+python -m pip install diskforge
+
+# Or install from source
+git clone https://github.com/diskforge/diskforge.git
+cd diskforge
+python -m pip install .
 ```
 
 ## Usage
