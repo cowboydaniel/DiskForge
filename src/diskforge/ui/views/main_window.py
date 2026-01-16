@@ -6,7 +6,6 @@ The main application window with disk tree, actions, and job queue.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from PySide6.QtWidgets import (
@@ -19,7 +18,6 @@ from PySide6.QtWidgets import (
     QTableView,
     QLabel,
     QMessageBox,
-    QFileDialog,
     QMenu,
     QGroupBox,
     QComboBox,
@@ -33,7 +31,7 @@ from PySide6.QtGui import QAction, QIcon
 import humanize
 
 from diskforge import __version__
-from diskforge.core.models import Disk, FileSystem, Partition
+from diskforge.core.models import Disk, Partition
 from diskforge.core.safety import DangerMode
 from diskforge.core.session import Session
 from diskforge.ui.models.disk_model import DiskModel
@@ -45,6 +43,16 @@ from diskforge.ui.widgets.disk_view import DiskMapWidget
 from diskforge.ui.widgets.operations_tree import OperationsTreeWidget
 from diskforge.ui.widgets.progress_widget import ProgressWidget, PendingOperationsWidget
 from diskforge.ui.widgets.ribbon import RibbonWidget
+from diskforge.ui.views.wizards import (
+    CreatePartitionWizard,
+    FormatPartitionWizard,
+    DeletePartitionWizard,
+    CloneDiskWizard,
+    ClonePartitionWizard,
+    CreateBackupWizard,
+    RestoreBackupWizard,
+    RescueMediaWizard,
+)
 
 
 class MainWindow(QMainWindow):
@@ -630,51 +638,13 @@ class MainWindow(QMainWindow):
                 self, "System Disk", "Cannot modify the system disk."
             )
             return
-
-        # Simple dialog for partition creation
-        fs_options = ["ext4", "xfs", "btrfs", "ntfs", "fat32"]
-        fs, ok = QInputDialog.getItem(
+        wizard = CreatePartitionWizard(
+            self._session,
+            disk,
+            self._status_label.setText,
             self,
-            "Create Partition",
-            "Select filesystem:",
-            fs_options,
-            0,
-            False,
         )
-        if not ok:
-            return
-
-        fs_map = {
-            "ext4": FileSystem.EXT4,
-            "xfs": FileSystem.XFS,
-            "btrfs": FileSystem.BTRFS,
-            "ntfs": FileSystem.NTFS,
-            "fat32": FileSystem.FAT32,
-        }
-
-        # Confirm
-        confirm_str = self._session.safety.generate_confirmation_string(disk.device_path)
-        if not ConfirmationDialog.confirm(
-            "Create Partition",
-            f"This will modify the partition table on {disk.device_path}",
-            confirm_str,
-            parent=self,
-        ):
-            return
-
-        from diskforge.core.models import PartitionCreateOptions
-
-        options = PartitionCreateOptions(
-            disk_path=disk.device_path,
-            filesystem=fs_map[fs],
-        )
-
-        success, message = self._session.platform.create_partition(options)
-        if success:
-            QMessageBox.information(self, "Success", message)
-            self._refresh_inventory()
-        else:
-            QMessageBox.critical(self, "Error", message)
+        self._run_wizard(wizard)
 
     def _on_format_partition(self) -> None:
         """Handle format partition action."""
@@ -701,50 +671,13 @@ class MainWindow(QMainWindow):
                 f"Partition is mounted at {partition.mountpoint}. Unmount it first.",
             )
             return
-
-        fs_options = ["ext4", "xfs", "btrfs", "ntfs", "fat32", "exfat"]
-        fs, ok = QInputDialog.getItem(
+        wizard = FormatPartitionWizard(
+            self._session,
+            partition,
+            self._status_label.setText,
             self,
-            "Format Partition",
-            "Select filesystem:",
-            fs_options,
-            0,
-            False,
         )
-        if not ok:
-            return
-
-        fs_map = {
-            "ext4": FileSystem.EXT4,
-            "xfs": FileSystem.XFS,
-            "btrfs": FileSystem.BTRFS,
-            "ntfs": FileSystem.NTFS,
-            "fat32": FileSystem.FAT32,
-            "exfat": FileSystem.EXFAT,
-        }
-
-        confirm_str = self._session.safety.generate_confirmation_string(partition.device_path)
-        if not ConfirmationDialog.confirm(
-            "Format Partition",
-            f"This will ERASE ALL DATA on {partition.device_path}",
-            confirm_str,
-            parent=self,
-        ):
-            return
-
-        from diskforge.core.models import FormatOptions
-
-        options = FormatOptions(
-            partition_path=partition.device_path,
-            filesystem=fs_map[fs],
-        )
-
-        success, message = self._session.platform.format_partition(options)
-        if success:
-            QMessageBox.information(self, "Success", message)
-            self._refresh_inventory()
-        else:
-            QMessageBox.critical(self, "Error", message)
+        self._run_wizard(wizard)
 
     def _on_delete_partition(self) -> None:
         """Handle delete partition action."""
@@ -771,22 +704,13 @@ class MainWindow(QMainWindow):
                 f"Partition is mounted at {partition.mountpoint}. Unmount it first.",
             )
             return
-
-        confirm_str = self._session.safety.generate_confirmation_string(partition.device_path)
-        if not ConfirmationDialog.confirm(
-            "Delete Partition",
-            f"This will PERMANENTLY DELETE {partition.device_path}",
-            confirm_str,
-            parent=self,
-        ):
-            return
-
-        success, message = self._session.platform.delete_partition(partition.device_path)
-        if success:
-            QMessageBox.information(self, "Success", message)
-            self._refresh_inventory()
-        else:
-            QMessageBox.critical(self, "Error", message)
+        wizard = DeletePartitionWizard(
+            self._session,
+            partition,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
 
     def _on_clone_disk(self) -> None:
         """Handle clone disk action."""
@@ -809,92 +733,48 @@ class MainWindow(QMainWindow):
         if not inventory:
             return
 
-        target_options = [
-            f"{d.device_path} ({d.model})"
+        target_disks = [
+            d
             for d in inventory.disks
             if d.device_path != source.device_path and not d.is_system_disk
         ]
 
-        if not target_options:
+        if not target_disks:
             QMessageBox.warning(self, "No Target", "No suitable target disks available.")
             return
-
-        target_str, ok = QInputDialog.getItem(
+        wizard = CloneDiskWizard(
+            self._session,
+            source,
+            target_disks,
+            self._status_label.setText,
             self,
-            "Clone Disk",
-            "Select target disk:",
-            target_options,
-            0,
-            False,
         )
-        if not ok:
-            return
-
-        target_path = target_str.split(" ")[0]
-
-        confirm_str = self._session.safety.generate_confirmation_string(target_path)
-        if not ConfirmationDialog.confirm(
-            "Clone Disk",
-            f"This will DESTROY ALL DATA on {target_path}",
-            confirm_str,
-            parent=self,
-        ):
-            return
-
-        self._status_label.setText(f"Cloning {source.device_path} to {target_path}...")
-        success, message = self._session.platform.clone_disk(source.device_path, target_path)
-
-        if success:
-            QMessageBox.information(self, "Success", message)
-        else:
-            QMessageBox.critical(self, "Error", message)
-
-        self._status_label.setText("Ready")
-        self._refresh_inventory()
+        self._run_wizard(wizard)
 
     def _on_clone_partition(self) -> None:
         """Handle clone partition action."""
-        QMessageBox.information(
-            self,
-            "Clone Partition",
-            "Select a partition from the tree and use right-click > Clone Partition",
-        )
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Partition):
+            self._clone_partition(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a partition, not a disk.")
 
     def _clone_partition(self, source: Partition) -> None:
         """Clone a partition."""
         if not self._check_danger_mode():
             return
-
-        # Get target partition path
-        target_path, ok = QInputDialog.getText(
+        wizard = ClonePartitionWizard(
+            self._session,
+            source,
+            self._status_label.setText,
             self,
-            "Clone Partition",
-            "Enter target partition path:",
         )
-        if not ok or not target_path:
-            return
-
-        confirm_str = self._session.safety.generate_confirmation_string(target_path)
-        if not ConfirmationDialog.confirm(
-            "Clone Partition",
-            f"This will DESTROY ALL DATA on {target_path}",
-            confirm_str,
-            parent=self,
-        ):
-            return
-
-        self._status_label.setText(f"Cloning {source.device_path} to {target_path}...")
-        success, message = self._session.platform.clone_partition(
-            source.device_path, target_path
-        )
-
-        if success:
-            QMessageBox.information(self, "Success", message)
-        else:
-            QMessageBox.critical(self, "Error", message)
-
-        self._status_label.setText("Ready")
-        self._refresh_inventory()
+        self._run_wizard(wizard)
 
     def _on_create_backup(self) -> None:
         """Handle create backup action."""
@@ -910,111 +790,38 @@ class MainWindow(QMainWindow):
 
     def _backup_device(self, source_path: str) -> None:
         """Create backup of a device."""
-        output_path, _ = QFileDialog.getSaveFileName(
-            self,
-            "Save Backup Image",
-            "",
-            "Disk Images (*.img *.img.zst *.img.gz);;All Files (*)",
-        )
-        if not output_path:
-            return
-
-        compress_options = ["zstd (recommended)", "gzip", "none"]
-        compress, ok = QInputDialog.getItem(
-            self,
-            "Compression",
-            "Select compression:",
-            compress_options,
-            0,
-            False,
-        )
-        if not ok:
-            return
-
-        compress_map = {
-            "zstd (recommended)": "zstd",
-            "gzip": "gzip",
-            "none": None,
-        }
-
-        self._status_label.setText(f"Creating backup of {source_path}...")
-        success, message, info = self._session.platform.create_image(
+        wizard = CreateBackupWizard(
+            self._session,
             source_path,
-            Path(output_path),
-            compression=compress_map[compress],
+            self._status_label.setText,
+            self,
         )
-
-        if success:
-            QMessageBox.information(self, "Success", message)
-        else:
-            QMessageBox.critical(self, "Error", message)
-
-        self._status_label.setText("Ready")
+        self._run_wizard(wizard)
 
     def _on_restore_backup(self) -> None:
         """Handle restore backup action."""
         if not self._check_danger_mode():
             return
-
-        image_path, _ = QFileDialog.getOpenFileName(
+        wizard = RestoreBackupWizard(
+            self._session,
+            self._status_label.setText,
             self,
-            "Select Backup Image",
-            "",
-            "Disk Images (*.img *.img.zst *.img.gz);;All Files (*)",
         )
-        if not image_path:
-            return
-
-        target_path, ok = QInputDialog.getText(
-            self,
-            "Restore Target",
-            "Enter target device path:",
-        )
-        if not ok or not target_path:
-            return
-
-        confirm_str = self._session.safety.generate_confirmation_string(target_path)
-        if not ConfirmationDialog.confirm(
-            "Restore Backup",
-            f"This will DESTROY ALL DATA on {target_path}",
-            confirm_str,
-            parent=self,
-        ):
-            return
-
-        self._status_label.setText(f"Restoring to {target_path}...")
-        success, message = self._session.platform.restore_image(
-            Path(image_path), target_path
-        )
-
-        if success:
-            QMessageBox.information(self, "Success", message)
-        else:
-            QMessageBox.critical(self, "Error", message)
-
-        self._status_label.setText("Ready")
-        self._refresh_inventory()
+        self._run_wizard(wizard)
 
     def _on_create_rescue(self) -> None:
         """Handle create rescue media action."""
-        output_path = QFileDialog.getExistingDirectory(
+        wizard = RescueMediaWizard(
+            self._session,
+            self._status_label.setText,
             self,
-            "Select Output Directory for Rescue Media",
         )
-        if not output_path:
-            return
+        self._run_wizard(wizard)
 
-        self._status_label.setText("Creating rescue media...")
-        success, message, artifacts = self._session.platform.create_rescue_media(
-            Path(output_path)
-        )
-
-        if success:
-            QMessageBox.information(self, "Success", f"{message}\n\nCreated files in: {output_path}")
-        else:
-            QMessageBox.critical(self, "Error", message)
-
-        self._status_label.setText("Ready")
+    def _run_wizard(self, wizard: Any) -> None:
+        wizard.exec()
+        if wizard.operation_success and wizard.refresh_on_success:
+            self._refresh_inventory()
 
     def _on_cancel_job(self) -> None:
         """Cancel current job."""
