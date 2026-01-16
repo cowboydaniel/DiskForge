@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=DiskForge
+Comment=Production-grade disk management application
+Exec=diskforge-gui
+Icon=diskforge
+Terminal=false
+Categories=System;Utility;
+StartupWMClass=DiskForge

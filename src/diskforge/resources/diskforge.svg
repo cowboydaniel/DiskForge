@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="DiskForge">
+  <defs>
+    <linearGradient id="df-gradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#9333ea"/>
+    </linearGradient>
+  </defs>
+  <rect x="12" y="12" width="104" height="104" rx="20" fill="url(#df-gradient)"/>
+  <path d="M42 78c8-14 22-22 38-26 4-1 8 1 9 5 1 4-1 8-5 9-12 3-22 10-28 20-2 3-6 4-9 2-3-2-4-6-2-10z" fill="#ffffff"/>
+  <circle cx="68" cy="48" r="10" fill="#ffffff"/>
+</svg>
