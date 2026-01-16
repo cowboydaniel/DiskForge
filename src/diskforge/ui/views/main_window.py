@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QGroupBox,
     QComboBox,
+    QPushButton,
     QInputDialog,
     QHeaderView,
     QFrame,
