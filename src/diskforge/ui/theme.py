@@ -81,9 +81,26 @@ class AomeiTheme:
         QMenuBar::item:selected {{
             background-color: {self.colors.brand_primary_dark};
         }}
+        QMenuBar::item:pressed {{
+            background-color: {self.colors.brand_primary_dark};
+        }}
+        QMenuBar::item:disabled {{
+            color: {self.colors.text_muted};
+        }}
         QMenu {{
             background-color: {self.colors.surface};
             border: 1px solid {self.colors.border};
+        }}
+        QMenu::item {{
+            padding: 6px 18px;
+            background-color: transparent;
+        }}
+        QMenu::item:selected {{
+            background-color: {self.colors.brand_primary_soft};
+            color: {self.colors.brand_primary_dark};
+        }}
+        QMenu::item:disabled {{
+            color: {self.colors.text_muted};
         }}
         QToolBar {{
             background-color: {self.colors.surface_muted};
@@ -98,19 +115,28 @@ class AomeiTheme:
             border: none;
         }}
         #ribbonTabs QTabBar::tab {{
-            background-color: {self.colors.brand_primary_soft};
+            background-color: {self.colors.surface_muted};
             color: {self.colors.text_primary};
-            padding: 6px 14px;
+            padding: 6px 16px;
             border: 1px solid {self.colors.border};
             border-bottom: none;
-            margin-right: 4px;
-            border-top-left-radius: 4px;
-            border-top-right-radius: 4px;
+            margin-right: 6px;
+            border-top-left-radius: {self.radii.button_px}px;
+            border-top-right-radius: {self.radii.button_px}px;
+        }}
+        #ribbonTabs QTabBar::tab:hover:!selected {{
+            background-color: {self.colors.brand_primary_soft};
+            color: {self.colors.brand_primary_dark};
+        }}
+        #ribbonTabs QTabBar::tab:disabled {{
+            background-color: {self.colors.surface_muted};
+            color: {self.colors.text_muted};
         }}
         #ribbonTabs QTabBar::tab:selected {{
             background-color: {self.colors.surface};
             color: {self.colors.brand_primary_dark};
             font-weight: {self.typography.section_weight};
+            border-color: {self.colors.brand_primary};
         }}
         #ribbon QToolButton {{
             background-color: {self.colors.surface};
@@ -121,6 +147,20 @@ class AomeiTheme:
         #ribbon QToolButton:hover {{
             border-color: {self.colors.brand_primary};
             color: {self.colors.brand_primary};
+        }}
+        #ribbon QToolButton:pressed {{
+            background-color: {self.colors.brand_primary_soft};
+            border-color: {self.colors.brand_primary};
+        }}
+        #ribbon QToolButton:checked {{
+            background-color: {self.colors.brand_primary_soft};
+            border-color: {self.colors.brand_primary};
+            color: {self.colors.brand_primary_dark};
+        }}
+        #ribbon QToolButton:disabled {{
+            background-color: {self.colors.surface_muted};
+            border-color: {self.colors.border};
+            color: {self.colors.text_muted};
         }}
         QStatusBar {{
             background-color: {self.colors.surface_muted};
@@ -175,6 +215,11 @@ class AomeiTheme:
             color: {self.colors.text_primary};
             font-weight: {self.typography.section_weight};
         }}
+        QFrame[frameShape="4"],
+        QFrame[frameShape="5"] {{
+            background-color: {self.colors.border};
+            border: none;
+        }}
         QTreeView,
         QTableView {{
             border: 1px solid {self.colors.border};
@@ -182,6 +227,27 @@ class AomeiTheme:
             alternate-background-color: {self.colors.surface_muted};
             selection-background-color: {self.colors.brand_primary};
             selection-color: {self.colors.text_inverted};
+        }}
+        QHeaderView::section {{
+            background-color: {self.colors.surface_alt};
+            color: {self.colors.text_primary};
+            padding: 6px 8px;
+            border: 1px solid {self.colors.border};
+            border-left: none;
+        }}
+        QHeaderView::section:first {{
+            border-left: 1px solid {self.colors.border};
+        }}
+        QHeaderView::section:hover {{
+            background-color: {self.colors.brand_primary_soft};
+        }}
+        QHeaderView::section:pressed {{
+            background-color: {self.colors.brand_primary_soft};
+            color: {self.colors.brand_primary_dark};
+        }}
+        QTableCornerButton::section {{
+            background-color: {self.colors.surface_alt};
+            border: 1px solid {self.colors.border};
         }}
         QLabel {{
             color: {self.colors.text_primary};
@@ -197,6 +263,20 @@ class AomeiTheme:
             border-color: {self.colors.brand_primary};
             color: {self.colors.brand_primary};
         }}
+        QPushButton:pressed {{
+            background-color: {self.colors.brand_primary_soft};
+            border-color: {self.colors.brand_primary};
+        }}
+        QPushButton:checked {{
+            background-color: {self.colors.brand_primary_soft};
+            border-color: {self.colors.brand_primary};
+            color: {self.colors.brand_primary_dark};
+        }}
+        QPushButton:disabled {{
+            background-color: {self.colors.surface_muted};
+            border-color: {self.colors.border};
+            color: {self.colors.text_muted};
+        }}
         QPushButton#primaryAction {{
             background-color: {self.colors.brand_primary};
             border-color: {self.colors.brand_primary};
@@ -208,45 +288,103 @@ class AomeiTheme:
             border-color: {self.colors.brand_primary_dark};
             color: {self.colors.text_inverted};
         }}
+        QPushButton#primaryAction:pressed {{
+            background-color: {self.colors.brand_primary_dark};
+            border-color: {self.colors.brand_primary_dark};
+        }}
+        QPushButton#primaryAction:disabled {{
+            background-color: {self.colors.border};
+            border-color: {self.colors.border};
+            color: {self.colors.text_muted};
+        }}
+        QScrollBar:vertical {{
+            background-color: {self.colors.surface_muted};
+            width: 10px;
+            margin: 0;
+        }}
+        QScrollBar::handle:vertical {{
+            background-color: {self.colors.border_soft};
+            border-radius: 4px;
+            min-height: 20px;
+        }}
+        QScrollBar::handle:vertical:hover {{
+            background-color: {self.colors.brand_primary_soft};
+        }}
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical {{
+            height: 0;
+        }}
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical {{
+            background: none;
+        }}
+        QScrollBar:horizontal {{
+            background-color: {self.colors.surface_muted};
+            height: 10px;
+            margin: 0;
+        }}
+        QScrollBar::handle:horizontal {{
+            background-color: {self.colors.border_soft};
+            border-radius: 4px;
+            min-width: 20px;
+        }}
+        QScrollBar::handle:horizontal:hover {{
+            background-color: {self.colors.brand_primary_soft};
+        }}
+        QScrollBar::add-line:horizontal,
+        QScrollBar::sub-line:horizontal {{
+            width: 0;
+        }}
+        QScrollBar::add-page:horizontal,
+        QScrollBar::sub-page:horizontal {{
+            background: none;
+        }}
+        QToolTip {{
+            background-color: {self.colors.surface};
+            color: {self.colors.text_primary};
+            border: 1px solid {self.colors.border};
+            padding: 6px 8px;
+            border-radius: {self.radii.button_px}px;
+        }}
         """
 
 
 AOMEI_THEME = AomeiTheme(
     colors=ThemeColors(
-        window_bg="#f5f7fb",
+        window_bg="#f3f6fb",
         text_primary="#1f2a44",
-        brand_primary="#1e6fd9",
-        brand_primary_dark="#1559ad",
-        brand_primary_soft="#dbe8ff",
-        brand_accent="#1fb456",
-        brand_danger="#d94242",
+        brand_primary="#1a69d4",
+        brand_primary_dark="#1254ad",
+        brand_primary_soft="#e3eefc",
+        brand_accent="#2cb45f",
+        brand_danger="#e05353",
         surface="#ffffff",
-        surface_alt="#eef3fb",
-        surface_muted="#f0f4fb",
-        border="#d9e1f0",
-        border_soft="#c7d3ea",
+        surface_alt="#edf2fa",
+        surface_muted="#f4f7fd",
+        border="#d5deef",
+        border_soft="#c3d0e8",
         text_inverted="#ffffff",
-        text_muted="#dbe8ff",
+        text_muted="#bcd3f5",
     ),
     typography=ThemeTypography(
         title_size_px=18,
-        subtitle_size_px=11,
+        subtitle_size_px=12,
         title_weight=700,
-        subtitle_weight=400,
-        badge_weight=700,
+        subtitle_weight=500,
+        badge_weight=600,
         section_weight=600,
     ),
     spacing=ThemeSpacing(
-        menubar_padding_px=4,
-        toolbar_spacing_px=8,
-        badge_padding="6px 12px",
-        button_padding="6px 10px",
-        sidebar_title_padding="4px 0",
+        menubar_padding_px=6,
+        toolbar_spacing_px=10,
+        badge_padding="4px 10px",
+        button_padding="6px 12px",
+        sidebar_title_padding="6px 0",
     ),
     radii=ThemeRadii(
         group_box_px=6,
         button_px=4,
-        badge_px=12,
+        badge_px=10,
     ),
 )
 
