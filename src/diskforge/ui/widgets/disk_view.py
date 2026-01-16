@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QGraphicsItem,
 )
 from PySide6.QtCore import Qt, Signal, QRectF
-from PySide6.QtGui import QColor, QBrush, QPen, QFont
+from PySide6.QtGui import QColor, QBrush, QPen, QFont, QPainter
 import humanize
 
 from diskforge.core.models import Disk, Partition, FileSystem
@@ -91,7 +91,7 @@ class DiskGraphicsView(QGraphicsView):
         # Style
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setRenderHint(self.renderHints() | self.RenderHint.Antialiasing)
+        self.setRenderHint(QPainter.Antialiasing, True)
 
         self._disk: Disk | None = None
         self._partition_items: list[PartitionRectItem] = []
