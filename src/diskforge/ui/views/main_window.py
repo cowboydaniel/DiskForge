@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QGroupBox,
     QComboBox,
-    QPushButton,
     QInputDialog,
     QHeaderView,
     QFrame,
@@ -42,6 +41,7 @@ from diskforge.ui.models.job_model import JobModel
 from diskforge.ui.theme import aomei_qss
 from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
 from diskforge.ui.widgets.disk_view import DiskGraphicsView
+from diskforge.ui.widgets.operations_tree import OperationsTreeWidget
 from diskforge.ui.widgets.progress_widget import ProgressWidget
 from diskforge.ui.widgets.ribbon import RibbonWidget
 
@@ -208,23 +208,9 @@ class MainWindow(QMainWindow):
         sidebar_title.setObjectName("sidebarTitle")
         sidebar_layout.addWidget(sidebar_title)
 
-        def add_sidebar_button(text: str, slot: Any, primary: bool = False) -> None:
-            button = QPushButton(text)
-            if primary:
-                button.setObjectName("primaryAction")
-            button.clicked.connect(slot)
-            sidebar_layout.addWidget(button)
-
-        add_sidebar_button("Refresh Inventory", self._refresh_inventory, primary=True)
-        add_sidebar_button("Create Partition", self._on_create_partition)
-        add_sidebar_button("Format Partition", self._on_format_partition)
-        add_sidebar_button("Delete Partition", self._on_delete_partition)
-        add_sidebar_button("Clone Disk", self._on_clone_disk)
-        add_sidebar_button("Clone Partition", self._on_clone_partition)
-        add_sidebar_button("Create Backup", self._on_create_backup)
-        add_sidebar_button("Restore Backup", self._on_restore_backup)
-        add_sidebar_button("Create Rescue Media", self._on_create_rescue)
-        add_sidebar_button("Toggle Danger Mode", self._toggle_danger_mode)
+        operations_tree = OperationsTreeWidget(self._actions, sidebar)
+        operations_tree.setObjectName("operationsTree")
+        sidebar_layout.addWidget(operations_tree, stretch=1)
 
         sidebar_layout.addStretch()
         splitter.addWidget(sidebar)
