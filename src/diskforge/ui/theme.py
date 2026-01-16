@@ -238,6 +238,55 @@ class AomeiTheme:
             font-weight: {self.typography.section_weight};
             padding: {self.spacing.sidebar_title_padding};
         }}
+        #diskMapPanel {{
+            background-color: {self.colors.surface};
+            border: 1px solid {self.colors.border};
+            border-radius: {self.radii.group_box_px}px;
+        }}
+        #sectionTitle {{
+            color: {self.colors.text_primary};
+            font-weight: {self.typography.section_weight};
+            font-size: {self.typography.subtitle_size_px + 2}px;
+        }}
+        #diskMapSubtitle {{
+            color: {self.colors.text_muted};
+        }}
+        #mapActionButton {{
+            background-color: {self.colors.surface_alt};
+            border: 1px solid {self.colors.border_soft};
+            padding: 4px 10px;
+            border-radius: {self.radii.button_px}px;
+        }}
+        #mapActionButton:hover {{
+            background-color: {self.colors.brand_primary_soft};
+            border-color: {self.colors.brand_primary};
+            color: {self.colors.brand_primary_dark};
+        }}
+        #mapActionButton:pressed {{
+            background-color: {self.colors.brand_primary_soft};
+            border-color: {self.colors.brand_primary};
+        }}
+        #diskLegend QLabel {{
+            color: {self.colors.text_primary};
+        }}
+        #legendLabel {{
+            font-weight: {self.typography.section_weight};
+        }}
+        #legendMeta {{
+            color: {self.colors.text_muted};
+            font-size: {self.typography.subtitle_size_px}px;
+        }}
+        #legendTitle {{
+            color: {self.colors.text_muted};
+            font-weight: {self.typography.section_weight};
+        }}
+        #legendValue {{
+            color: {self.colors.text_primary};
+        }}
+        #legendEmpty {{
+            color: {self.colors.text_muted};
+            font-style: italic;
+        }}
         QGroupBox {{
             border: 1px solid {self.colors.border};
             border-radius: {self.radii.group_box_px}px;
