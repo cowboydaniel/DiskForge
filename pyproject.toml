@@ -1,21 +1,20 @@
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[tool.poetry]
+[project]
 name = "diskforge"
 version = "1.0.0"
 description = "Production-grade cross-platform disk management application"
-authors = ["DiskForge Team <team@diskforge.dev>"]
-license = "MIT"
 readme = "README.md"
-packages = [{include = "diskforge", from = "src"}]
+requires-python = ">=3.12"
+license = {text = "MIT"}
+authors = [{name = "DiskForge Team", email = "team@diskforge.dev"}]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Environment :: X11 Applications :: Qt",
     "Intended Audience :: System Administrators",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: Microsoft :: Windows :: Windows 11",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3.12",
@@ -23,29 +22,32 @@ classifiers = [
     "Topic :: System :: Archiving :: Backup",
     "Topic :: System :: Filesystems",
 ]
+dependencies = [
+    "PySide6>=6.6.0",
+    "pydantic>=2.5.0",
+    "structlog>=24.1.0",
+    "click>=8.1.0",
+    "rich>=13.7.0",
+    "psutil>=5.9.0",
+    "humanize>=4.9.0",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.12,<3.13"
-PySide6 = "^6.6.0"
-pydantic = "^2.5.0"
-structlog = "^24.1.0"
-click = "^8.1.0"
-rich = "^13.7.0"
-psutil = "^5.9.0"
-humanize = "^4.9.0"
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "pytest-qt>=4.3.0",
+    "ruff>=0.2.0",
+    "mypy>=1.8.0",
+    "pre-commit>=3.6.0",
+]
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.0.0"
-pytest-cov = "^4.1.0"
-pytest-asyncio = "^0.23.0"
-pytest-mock = "^3.12.0"
-pytest-qt = "^4.3.0"
-ruff = "^0.2.0"
-mypy = "^1.8.0"
-pre-commit = "^3.6.0"
-
-[tool.poetry.scripts]
+[project.scripts]
 diskforge = "diskforge.cli.main:main"
+
+[project.gui-scripts]
 diskforge-gui = "diskforge.ui.main:main"
 
 [tool.ruff]

@@ -18,6 +18,10 @@ if README.exists():
 
 is_linux = sys.platform.startswith("linux")
 
+if len(sys.argv) == 1:
+    print("No command supplied; defaulting to `install`.")
+    sys.argv.append("install")
+
 setup(
     name="diskforge",
     version="1.0.0",
@@ -74,7 +78,6 @@ setup(
         "Environment :: Console",
         "Environment :: X11 Applications :: Qt",
         "Intended Audience :: System Administrators",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: Microsoft :: Windows :: Windows 11",
         "Operating System :: POSIX :: Linux",
         "Programming Language :: Python :: 3.12",
