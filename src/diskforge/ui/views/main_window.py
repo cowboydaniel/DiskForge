@@ -42,6 +42,7 @@ from diskforge.core.safety import DangerMode
 from diskforge.core.session import Session
 from diskforge.ui.models.disk_model import DiskModel
 from diskforge.ui.models.job_model import JobModel
+from diskforge.ui.theme import aomei_qss
 from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
 from diskforge.ui.widgets.disk_view import DiskGraphicsView
 from diskforge.ui.widgets.progress_widget import ProgressWidget
@@ -314,116 +315,7 @@ class MainWindow(QMainWindow):
 
     def _apply_aomei_theme(self) -> None:
         """Apply an AOMEI-inspired theme to the main window."""
-        self.setStyleSheet(
-            """
-            QMainWindow {
-                background-color: #f5f7fb;
-                color: #1f2a44;
-            }
-            QMenuBar {
-                background-color: #1e6fd9;
-                color: white;
-                padding: 4px;
-            }
-            QMenuBar::item:selected {
-                background-color: #1559ad;
-            }
-            QMenu {
-                background-color: white;
-                border: 1px solid #d9e1f0;
-            }
-            QToolBar {
-                background-color: #f0f4fb;
-                border-bottom: 1px solid #d9e1f0;
-                spacing: 8px;
-            }
-            QStatusBar {
-                background-color: #f0f4fb;
-                border-top: 1px solid #d9e1f0;
-            }
-            #headerBar {
-                background-color: #1e6fd9;
-            }
-            #appTitle {
-                color: white;
-                font-size: 18px;
-                font-weight: 700;
-            }
-            #appSubtitle {
-                color: #dbe8ff;
-                font-size: 11px;
-            }
-            #modeBadge {
-                background-color: #1fb456;
-                color: white;
-                padding: 6px 12px;
-                border-radius: 12px;
-                font-weight: 700;
-            }
-            #modeBadge[danger="true"] {
-                background-color: #d94242;
-            }
-            #modeBadge[danger="false"] {
-                background-color: #1fb456;
-            }
-            #sidebar {
-                background-color: #eef3fb;
-                border-right: 1px solid #d9e1f0;
-            }
-            #sidebarTitle {
-                color: #1f2a44;
-                font-weight: 700;
-                padding: 4px 0;
-            }
-            QGroupBox {
-                border: 1px solid #d9e1f0;
-                border-radius: 6px;
-                margin-top: 12px;
-                padding-top: 8px;
-                background-color: white;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                left: 12px;
-                padding: 0 6px;
-                color: #1f2a44;
-                font-weight: 600;
-            }
-            QTreeView,
-            QTableView {
-                border: 1px solid #d9e1f0;
-                background-color: white;
-                alternate-background-color: #f4f7fc;
-                selection-background-color: #1e6fd9;
-                selection-color: white;
-            }
-            QLabel {
-                color: #1f2a44;
-            }
-            QPushButton {
-                background-color: white;
-                border: 1px solid #c7d3ea;
-                padding: 6px 10px;
-                border-radius: 4px;
-                text-align: left;
-            }
-            QPushButton:hover {
-                border-color: #1e6fd9;
-                color: #1e6fd9;
-            }
-            QPushButton#primaryAction {
-                background-color: #1e6fd9;
-                border-color: #1e6fd9;
-                color: white;
-                font-weight: 600;
-            }
-            QPushButton#primaryAction:hover {
-                background-color: #1559ad;
-                border-color: #1559ad;
-                color: white;
-            }
-            """
-        )
+        self.setStyleSheet(aomei_qss())
 
     def _setup_statusbar(self) -> None:
         """Set up the status bar."""
