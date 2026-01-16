@@ -41,7 +41,7 @@ from diskforge.ui.models.job_model import JobModel
 from diskforge.ui.assets import DiskForgeIcons
 from diskforge.ui.theme import aomei_qss
 from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
-from diskforge.ui.widgets.disk_view import DiskGraphicsView
+from diskforge.ui.widgets.disk_view import DiskMapWidget
 from diskforge.ui.widgets.operations_tree import OperationsTreeWidget
 from diskforge.ui.widgets.progress_widget import ProgressWidget
 from diskforge.ui.widgets.ribbon import RibbonWidget
@@ -266,12 +266,41 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(0, 0, 0, 0)
 
         # Disk visualization
-        viz_group = QGroupBox("Disk Layout")
-        viz_layout = QVBoxLayout(viz_group)
-        self._disk_view = DiskGraphicsView()
-        self._disk_view.partitionSelected.connect(self._on_partition_selected)
-        viz_layout.addWidget(self._disk_view)
-        right_layout.addWidget(viz_group)
+        disk_panel = QFrame()
+        disk_panel.setObjectName("diskMapPanel")
+        disk_panel_layout = QVBoxLayout(disk_panel)
+        disk_panel_layout.setContentsMargins(12, 12, 12, 12)
+        disk_panel_layout.setSpacing(6)
+
+        disk_header_layout = QHBoxLayout()
+        disk_title = QLabel("Disk Map")
+        disk_title.setObjectName("sectionTitle")
+        disk_header_layout.addWidget(disk_title)
+        disk_header_layout.addStretch()
+
+        def add_map_action(text: str, slot: Any) -> None:
+            button = QPushButton(text)
+            button.setObjectName("mapActionButton")
+            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            button.clicked.connect(slot)
+            disk_header_layout.addWidget(button)
+
+        add_map_action("Refresh", self._refresh_inventory)
+        add_map_action("Create", self._on_create_partition)
+        add_map_action("Format", self._on_format_partition)
+        add_map_action("Delete", self._on_delete_partition)
+
+        disk_panel_layout.addLayout(disk_header_layout)
+
+        self._disk_map_subtitle = QLabel("Select a disk to view the map")
+        self._disk_map_subtitle.setObjectName("diskMapSubtitle")
+        disk_panel_layout.addWidget(self._disk_map_subtitle)
+
+        self._disk_map = DiskMapWidget()
+        self._disk_map.partitionSelected.connect(self._on_partition_selected)
+        disk_panel_layout.addWidget(self._disk_map)
+
+        right_layout.addWidget(disk_panel)
 
         # Details panel
         details_group = QGroupBox("Details")
@@ -379,7 +408,7 @@ class MainWindow(QMainWindow):
         indexes = self._disk_tree.selectionModel().selectedIndexes()
         if not indexes:
             self._details_label.setText("Select a disk or partition")
-            self._disk_view.setDisk(None)
+            self._set_disk_map(None)
             return
 
         item = self._disk_model.getItemAtIndex(indexes[0])
@@ -388,9 +417,13 @@ class MainWindow(QMainWindow):
 
         if isinstance(item, Disk):
             self._show_disk_details(item)
-            self._disk_view.setDisk(item)
+            self._set_disk_map(item)
         elif isinstance(item, Partition):
             self._show_partition_details(item)
+            parent_index = indexes[0].parent()
+            parent_item = self._disk_model.getItemAtIndex(parent_index) if parent_index.isValid() else None
+            if isinstance(parent_item, Disk):
+                self._set_disk_map(parent_item)
 
     def _show_disk_details(self, disk: Disk) -> None:
         """Show disk details in the details panel."""
@@ -421,6 +454,19 @@ class MainWindow(QMainWindow):
 <tr><td>Flags:</td><td>{flags}</td></tr>
 </table>"""
         self._details_label.setText(text)
+
+    def _set_disk_map(self, disk: Disk | None) -> None:
+        """Update the disk map widget and its header."""
+        self._disk_map.setDisk(disk)
+        if disk is None:
+            self._disk_map_subtitle.setText("Select a disk to view the map")
+            return
+
+        size_text = humanize.naturalsize(disk.size_bytes, binary=True)
+        model_text = disk.model or "Unknown model"
+        self._disk_map_subtitle.setText(
+            f"{disk.device_path} • {model_text} • {size_text} • {disk.partition_style.name}"
+        )
 
     @Slot(Partition)
     def _on_partition_selected(self, partition: Partition) -> None:
