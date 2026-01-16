@@ -17,13 +17,10 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTreeView,
     QTableView,
-    QToolBar,
-    QStatusBar,
     QLabel,
     QMessageBox,
     QFileDialog,
     QMenu,
-    QMenuBar,
     QGroupBox,
     QComboBox,
     QPushButton,
@@ -46,6 +43,7 @@ from diskforge.ui.theme import aomei_qss
 from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
 from diskforge.ui.widgets.disk_view import DiskGraphicsView
 from diskforge.ui.widgets.progress_widget import ProgressWidget
+from diskforge.ui.widgets.ribbon import RibbonWidget
 
 
 class MainWindow(QMainWindow):
@@ -64,8 +62,8 @@ class MainWindow(QMainWindow):
 
         # Set up UI
         self._apply_aomei_theme()
-        self._setup_menubar()
-        self._setup_toolbar()
+        self._actions = self._build_actions()
+        self._setup_ribbon()
         self._setup_central_widget()
         self._setup_statusbar()
         self._update_danger_mode_indicator()
@@ -78,91 +76,88 @@ class MainWindow(QMainWindow):
         # Initial load
         self._refresh_inventory()
 
-    def _setup_menubar(self) -> None:
-        """Set up the menu bar."""
-        menubar = self.menuBar()
+    def _build_actions(self) -> dict[str, QAction]:
+        """Build reusable QAction instances for the ribbon."""
+        actions = {
+            "refresh": QAction("Refresh", self),
+            "exit": QAction("Exit", self),
+            "clone_disk": QAction("Clone Disk...", self),
+            "clone_partition": QAction("Clone Partition...", self),
+            "create_backup": QAction("Create Backup...", self),
+            "restore_backup": QAction("Restore Backup...", self),
+            "rescue_media": QAction("Create Rescue Media...", self),
+            "danger_mode": QAction("Toggle Danger Mode", self),
+            "about": QAction("About", self),
+            "create_partition": QAction("Create Partition", self),
+            "format_partition": QAction("Format Partition", self),
+            "delete_partition": QAction("Delete Partition", self),
+        }
 
-        # File menu
-        file_menu = menubar.addMenu("&File")
+        actions["refresh"].setShortcut("F5")
+        actions["refresh"].triggered.connect(self._refresh_inventory)
 
-        refresh_action = QAction("&Refresh", self)
-        refresh_action.setShortcut("F5")
-        refresh_action.triggered.connect(self._refresh_inventory)
-        file_menu.addAction(refresh_action)
+        actions["exit"].setShortcut("Alt+F4")
+        actions["exit"].triggered.connect(self.close)
 
-        file_menu.addSeparator()
+        actions["clone_disk"].triggered.connect(self._on_clone_disk)
+        actions["clone_partition"].triggered.connect(self._on_clone_partition)
+        actions["create_backup"].triggered.connect(self._on_create_backup)
+        actions["restore_backup"].triggered.connect(self._on_restore_backup)
+        actions["rescue_media"].triggered.connect(self._on_create_rescue)
+        actions["danger_mode"].triggered.connect(self._toggle_danger_mode)
+        actions["about"].triggered.connect(self._show_about)
+        actions["create_partition"].triggered.connect(self._on_create_partition)
+        actions["format_partition"].triggered.connect(self._on_format_partition)
+        actions["delete_partition"].triggered.connect(self._on_delete_partition)
 
-        exit_action = QAction("E&xit", self)
-        exit_action.setShortcut("Alt+F4")
-        exit_action.triggered.connect(self.close)
-        file_menu.addAction(exit_action)
+        return actions
 
-        # Operations menu
-        ops_menu = menubar.addMenu("&Operations")
+    def _setup_ribbon(self) -> None:
+        """Set up the ribbon-style command area."""
+        ribbon = RibbonWidget(self)
+        ribbon.add_tab(
+            "Home",
+            [
+                ("Inventory", [self._actions["refresh"]]),
+                (
+                    "Partitions",
+                    [
+                        self._actions["create_partition"],
+                        self._actions["format_partition"],
+                        self._actions["delete_partition"],
+                    ],
+                ),
+            ],
+        )
+        ribbon.add_tab(
+            "Clone",
+            [
+                ("Clone", [self._actions["clone_disk"], self._actions["clone_partition"]]),
+            ],
+        )
+        ribbon.add_tab(
+            "Backup",
+            [
+                (
+                    "Backup & Restore",
+                    [
+                        self._actions["create_backup"],
+                        self._actions["restore_backup"],
+                        self._actions["rescue_media"],
+                    ],
+                ),
+            ],
+        )
+        ribbon.add_tab(
+            "Tools",
+            [
+                ("Safety", [self._actions["danger_mode"]]),
+                ("Support", [self._actions["about"]]),
+                ("Session", [self._actions["exit"]]),
+            ],
+        )
 
-        clone_disk_action = QAction("Clone &Disk...", self)
-        clone_disk_action.triggered.connect(self._on_clone_disk)
-        ops_menu.addAction(clone_disk_action)
-
-        clone_part_action = QAction("Clone &Partition...", self)
-        clone_part_action.triggered.connect(self._on_clone_partition)
-        ops_menu.addAction(clone_part_action)
-
-        ops_menu.addSeparator()
-
-        backup_action = QAction("Create &Backup...", self)
-        backup_action.triggered.connect(self._on_create_backup)
-        ops_menu.addAction(backup_action)
-
-        restore_action = QAction("&Restore Backup...", self)
-        restore_action.triggered.connect(self._on_restore_backup)
-        ops_menu.addAction(restore_action)
-
-        ops_menu.addSeparator()
-
-        rescue_action = QAction("Create &Rescue Media...", self)
-        rescue_action.triggered.connect(self._on_create_rescue)
-        ops_menu.addAction(rescue_action)
-
-        # Tools menu
-        tools_menu = menubar.addMenu("&Tools")
-
-        danger_mode_action = QAction("Toggle &Danger Mode", self)
-        danger_mode_action.triggered.connect(self._toggle_danger_mode)
-        tools_menu.addAction(danger_mode_action)
-
-        # Help menu
-        help_menu = menubar.addMenu("&Help")
-
-        about_action = QAction("&About", self)
-        about_action.triggered.connect(self._show_about)
-        help_menu.addAction(about_action)
-
-    def _setup_toolbar(self) -> None:
-        """Set up the toolbar."""
-        toolbar = QToolBar("Main Toolbar")
-        toolbar.setMovable(False)
-        self.addToolBar(toolbar)
-
-        # Refresh button
-        refresh_action = QAction("Refresh", self)
-        refresh_action.triggered.connect(self._refresh_inventory)
-        toolbar.addAction(refresh_action)
-
-        toolbar.addSeparator()
-
-        # Quick actions
-        create_part_action = QAction("Create Partition", self)
-        create_part_action.triggered.connect(self._on_create_partition)
-        toolbar.addAction(create_part_action)
-
-        format_action = QAction("Format", self)
-        format_action.triggered.connect(self._on_format_partition)
-        toolbar.addAction(format_action)
-
-        delete_action = QAction("Delete", self)
-        delete_action.triggered.connect(self._on_delete_partition)
-        toolbar.addAction(delete_action)
+        self._ribbon = ribbon
 
     def _setup_central_widget(self) -> None:
         """Set up the central widget."""
@@ -197,6 +192,7 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self._danger_label)
 
         main_layout.addWidget(header_bar)
+        main_layout.addWidget(self._ribbon)
 
         # Main splitter
         splitter = QSplitter(Qt.Horizontal)
@@ -501,7 +497,7 @@ class MainWindow(QMainWindow):
                 self,
                 "Danger Mode Required",
                 "This operation requires Danger Mode to be enabled.\n\n"
-                "Go to Tools > Toggle Danger Mode to enable it.",
+                "Go to the Tools tab and select Toggle Danger Mode to enable it.",
             )
             return False
         return True
