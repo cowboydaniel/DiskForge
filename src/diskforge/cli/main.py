@@ -86,8 +86,10 @@ def cli(
 
     if config:
         ctx.obj["config"] = DiskForgeConfig.load(config)
+        ctx.obj["config_path"] = config
     else:
         ctx.obj["config"] = load_config()
+        ctx.obj["config_path"] = None
 
     ctx.obj["json_output"] = json_output
     ctx.obj["quiet"] = quiet
@@ -2464,6 +2466,110 @@ Verify: {"No" if no_verify else "Yes"}""", title="Backup Plan"))
         console.print(f"[green]✓ {message}[/green]")
         if info:
             console.print(f"Image size: {humanize.naturalsize(info.image_size_bytes, binary=True)}")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("file-backup")
+@click.argument("output", type=click.Path(path_type=Path))
+@click.option(
+    "--include",
+    "-i",
+    multiple=True,
+    type=click.Path(path_type=Path),
+    help="File or folder to include (repeatable)",
+)
+@click.option(
+    "--exclude",
+    "-e",
+    multiple=True,
+    help="Exclude pattern (glob, repeatable)",
+)
+@click.option(
+    "--follow-symlinks/--no-follow-symlinks",
+    default=None,
+    help="Follow symlinks during traversal",
+)
+@click.option("--max-depth", type=int, help="Maximum directory depth to traverse")
+@click.option(
+    "--compression",
+    "-c",
+    type=click.Choice(["none", "gzip", "lz4", "zstd"]),
+    default="zstd",
+    help="Compression algorithm",
+)
+@click.option("--no-verify", is_flag=True, help="Skip verification")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def file_backup(
+    ctx: click.Context,
+    output: Path,
+    include: tuple[Path, ...],
+    exclude: tuple[str, ...],
+    follow_symlinks: bool | None,
+    max_depth: int | None,
+    compression: str,
+    no_verify: bool,
+    dry_run: bool,
+) -> None:
+    """Create a file-level backup archive from selected paths."""
+    session = get_session(ctx)
+    config = ctx.obj["config"]
+    selection_config = config.backup.file_selection
+
+    include_paths = [path.expanduser().resolve() for path in include] if include else selection_config.include_paths
+    if not include_paths:
+        console.print("[red]✗ No file selections provided. Use --include or configure defaults.[/red]")
+        sys.exit(1)
+
+    exclude_patterns = list(exclude) if exclude else selection_config.exclude_patterns
+    follow_value = selection_config.follow_symlinks if follow_symlinks is None else follow_symlinks
+    max_depth_value = selection_config.max_depth if max_depth is None else max_depth
+
+    selection_config.include_paths = include_paths
+    selection_config.exclude_patterns = exclude_patterns
+    selection_config.follow_symlinks = follow_value
+    selection_config.max_depth = max_depth_value
+    config.save(ctx.obj.get("config_path"))
+
+    compress = None if compression == "none" else compression
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Output: {output}
+Compression: {compression}
+Verify: {"No" if no_verify else "Yes"}
+Selections: {[str(path) for path in include_paths]}
+Exclude patterns: {exclude_patterns}
+Follow symlinks: {follow_value}
+Max depth: {max_depth_value}""", title="File Backup Plan"))
+        return
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Creating file backup...", total=100)
+
+        success, message, info = session.platform.create_file_backup(
+            output,
+            include_paths,
+            exclude_patterns=exclude_patterns,
+            compression=compress,
+            verify=not no_verify,
+            follow_symlinks=follow_value,
+            max_depth=max_depth_value,
+        )
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+        if info:
+            console.print(f"Archive size: {humanize.naturalsize(info.image_size_bytes, binary=True)}")
     else:
         console.print(f"[red]✗ {message}[/red]")
         sys.exit(1)

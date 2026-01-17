@@ -400,6 +400,32 @@ class ImageInfo:
 
 
 @dataclass
+class FileSelectionEntry:
+    """File selection metadata for file-level backups."""
+
+    original_path: str
+    archive_path: str
+    is_dir: bool
+    size_bytes: int | None
+    mode: int | None
+    permissions: str | None
+    uid: int | None
+    gid: int | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "original_path": self.original_path,
+            "archive_path": self.archive_path,
+            "is_dir": self.is_dir,
+            "size_bytes": self.size_bytes,
+            "mode": self.mode,
+            "permissions": self.permissions,
+            "uid": self.uid,
+            "gid": self.gid,
+        }
+
+
+@dataclass
 class SystemBackupInfo:
     """Information about a system backup bundle."""
 

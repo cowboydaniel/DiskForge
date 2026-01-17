@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import time
 import uuid
@@ -51,6 +52,7 @@ from diskforge.platform.base import CommandResult, PlatformBackend
 from diskforge.platform.file_ops import (
     build_free_space_report,
     cleanup_junk_files,
+    collect_file_selection,
     move_application,
     normalize_roots,
     remove_paths,
@@ -1628,6 +1630,128 @@ class WindowsBackend(PlatformBackend):
             return False, "Permission denied. Run as Administrator.", None
         except Exception as e:
             return False, f"Failed to create image: {e}", None
+
+    def create_file_backup(
+        self,
+        output_path: Path,
+        selections: list[Path],
+        exclude_patterns: list[str] | None = None,
+        context: JobContext | None = None,
+        compression: str | None = "zstd",
+        compression_level: CompressionLevel | None = None,
+        follow_symlinks: bool = False,
+        max_depth: int | None = None,
+        verify: bool = True,
+        schedule: str | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, ImageInfo | None]:
+        """Create a file-level backup archive."""
+        exclude_patterns = exclude_patterns or []
+        selection_entries, skipped, total_bytes = collect_file_selection(
+            selections,
+            exclude_patterns,
+            follow_symlinks=follow_symlinks,
+            max_depth=max_depth,
+        )
+
+        if not selection_entries:
+            return False, "No files or folders selected for backup", None
+
+        tar_mode = "w"
+        image_suffix = ".tar"
+        compression_used = compression
+        if compression in (None, "none"):
+            compression_used = None
+        elif compression == "gzip":
+            tar_mode = "w:gz"
+            image_suffix = ".tar.gz"
+        elif compression in ("zstd", "lz4"):
+            tar_mode = "w:gz"
+            image_suffix = ".tar.gz"
+            compression_used = "gzip"
+            if context:
+                context.add_warning(f"{compression} not available for file backups; using gzip.")
+
+        final_path = Path(str(output_path) + image_suffix) if image_suffix else output_path
+
+        if context:
+            context.update_progress(
+                message="Creating file-level backup",
+                bytes_total=total_bytes,
+            )
+
+        if dry_run:
+            return True, f"Would create file backup at {final_path}", None
+
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            start_time = datetime.now()
+            bytes_processed = 0
+
+            with tarfile.open(final_path, mode=tar_mode, dereference=follow_symlinks) as tar:
+                for entry in selection_entries:
+                    if context:
+                        context.check_cancelled()
+                    tar.add(entry.original_path, arcname=entry.archive_path, recursive=False)
+                    if not entry.is_dir and entry.size_bytes:
+                        bytes_processed += entry.size_bytes
+                        if context and total_bytes:
+                            elapsed = (datetime.now() - start_time).total_seconds()
+                            rate = bytes_processed / elapsed if elapsed > 0 else 0
+                            context.update_progress(
+                                current=int((bytes_processed / total_bytes) * 100),
+                                bytes_processed=bytes_processed,
+                                rate_bytes_per_sec=rate,
+                            )
+
+            checksum = None
+            if verify:
+                hasher = hashlib.sha256()
+                with open(final_path, "rb") as handle:
+                    while chunk := handle.read(1024 * 1024):
+                        hasher.update(chunk)
+                checksum = hasher.hexdigest()
+
+            metadata = {
+                "clone_mode": CloneMode.INTELLIGENT.value,
+                "schedule": schedule,
+                "compression_level": compression_level.value if compression_level else None,
+                "backup_type": BackupType.FILE_LEVEL.value,
+                "selection_roots": [str(path) for path in selections],
+                "exclude_patterns": exclude_patterns,
+                "follow_symlinks": follow_symlinks,
+                "max_depth": max_depth,
+                "skipped_paths": skipped,
+                "file_count": sum(1 for entry in selection_entries if not entry.is_dir),
+                "directory_count": sum(1 for entry in selection_entries if entry.is_dir),
+                "total_selected_bytes": total_bytes,
+                "selections": [entry.to_dict() for entry in selection_entries],
+            }
+
+            image_info = ImageInfo(
+                path=str(final_path),
+                source_device=",".join(str(path) for path in selections),
+                source_size_bytes=total_bytes,
+                image_size_bytes=final_path.stat().st_size,
+                backup_type=BackupType.FILE_LEVEL,
+                compression=compression_used,
+                created_at=start_time,
+                checksum=checksum,
+                checksum_algorithm="sha256",
+                metadata=metadata,
+            )
+
+            meta_path = Path(str(final_path) + ".meta.json")
+            with open(meta_path, "w") as f:
+                json.dump(image_info.to_dict(), f, indent=2)
+
+            return True, f"File backup created at {final_path}", image_info
+
+        except PermissionError:
+            return False, "Permission denied. Run as Administrator.", None
+        except Exception as e:
+            return False, f"Failed to create file backup: {e}", None
 
     def _normalize_mountpoint(self, mountpoint: str | None) -> str | None:
         if not mountpoint:
