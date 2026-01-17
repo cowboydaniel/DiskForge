@@ -187,7 +187,7 @@ class AomeiTheme:
             letter-spacing: 0.4px;
         }}
         #appSubtitle {{
-            color: {self.colors.text_muted};
+            color: {self.colors.brand_primary_soft};
             font-size: {self.typography.subtitle_size_px}px;
             font-weight: {self.typography.subtitle_weight};
         }}
@@ -450,7 +450,7 @@ AOMEI_THEME = AomeiTheme(
         border="#d5deef",
         border_soft="#c3d0e8",
         text_inverted="#ffffff",
-        text_muted="#bcd3f5",
+        text_muted="#6f7f9b",
     ),
     typography=ThemeTypography(
         title_size_px=20,
