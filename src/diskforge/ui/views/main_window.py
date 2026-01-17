@@ -687,7 +687,8 @@ class MainWindow(QMainWindow):
 
         # Set column widths
         header = self._disk_tree.header()
-        header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        for column in range(self._disk_model.columnCount()):
+            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
 
         disk_layout.addWidget(self._disk_tree)
