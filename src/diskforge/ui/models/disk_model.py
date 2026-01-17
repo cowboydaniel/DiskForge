@@ -44,7 +44,7 @@ class DiskTreeItem:
         return 0
 
     def columnCount(self) -> int:
-        return 7
+        return 11
 
     def data(self, column: int) -> Any:
         if self._data is None:
@@ -56,18 +56,45 @@ class DiskTreeItem:
                 disk.device_path,
                 disk.model[:30] if disk.model else "Unknown",
                 humanize.naturalsize(disk.size_bytes, binary=True),
+                "",
+                "",
                 disk.disk_type.name,
+                disk.smart_info.status_text if disk.smart_info else "Unknown",
+                "",
                 disk.partition_style.name,
                 "",
                 "SYSTEM" if disk.is_system_disk else "",
             ]
         else:
             part = self._data
+            alignment_status = ""
+            if self._parent and isinstance(self._parent._data, Disk):
+                disk = self._parent._data
+                if disk.sector_size:
+                    alignment_sectors = max(1, 4096 // disk.sector_size)
+                    aligned = part.start_sector % alignment_sectors == 0
+                    alignment_status = "4K Aligned" if aligned else "Unaligned"
+            status_bits = []
+            if part.is_mounted:
+                status_bits.append("Mounted")
+            if part.is_system:
+                status_bits.append("System")
+            if part.is_boot:
+                status_bits.append("Boot")
+            status_text = ", ".join(status_bits)
             columns = [
                 part.device_path,
                 part.label or "",
                 humanize.naturalsize(part.size_bytes, binary=True),
+                humanize.naturalsize(part.used_space_bytes, binary=True)
+                if part.used_space_bytes is not None
+                else "",
+                humanize.naturalsize(part.free_space_bytes, binary=True)
+                if part.free_space_bytes is not None
+                else "",
                 part.filesystem.value,
+                status_text,
+                alignment_status,
                 "",
                 part.mountpoint or "",
                 ", ".join(f.name for f in part.flags[:2]) if part.flags else "",
@@ -93,7 +120,19 @@ class DiskModel(QAbstractItemModel):
 
     inventoryChanged = Signal()
 
-    HEADERS = ["Device", "Model/Label", "Size", "Type/FS", "Style", "Mount", "Flags"]
+    HEADERS = [
+        "Device",
+        "Model/Label",
+        "Size",
+        "Used Space",
+        "Free Space",
+        "Type/FS",
+        "Status",
+        "Alignment",
+        "Style",
+        "Mount",
+        "Flags",
+    ]
 
     def __init__(self, parent: Any = None) -> None:
         super().__init__(parent)
