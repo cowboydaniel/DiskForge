@@ -52,6 +52,12 @@ from diskforge.core.models import (
     PartitionRole,
     PartitionCreateOptions,
     PartitionRecoveryOptions,
+    WinREIntegrationOptions,
+    BootRepairOptions,
+    RebuildMBROptions,
+    UEFIBootOptions,
+    WindowsToGoOptions,
+    WindowsPasswordResetOptions,
     PartitionStyle,
     FreeSpaceOptions,
     JunkCleanupOptions,
@@ -771,6 +777,333 @@ class RescueMediaWizard(DiskForgeWizard):
 
     def _create_rescue_media(self, output_path: str) -> OperationResult:
         success, message, _artifacts = self._session.platform.create_rescue_media(Path(output_path))
+        return OperationResult(success=success, message=message)
+
+
+class IntegrateRecoveryEnvironmentWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Integrate to Recovery Environment")
+        self._session = session
+        self._status_callback = status_callback
+
+        source_page = PathEntryPage(
+            "Select Rescue Package",
+            "Select the DiskForge rescue media folder to integrate into WinRE.",
+            "Select Rescue Package",
+            "Select Rescue Folder",
+        )
+
+        confirm_str = session.safety.generate_confirmation_string("WinRE")
+        confirm_page = ConfirmationPage(
+            "Confirm WinRE Integration",
+            "This will copy DiskForge scripts into the Windows Recovery Environment.",
+            confirm_str,
+        )
+
+        result_page = OperationResultPage(
+            "Integrate WinRE",
+            lambda: self._integrate_recovery_env(source_page.path()),
+            status_callback,
+            "Integrating into WinRE...",
+        )
+
+        self.addPage(source_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _integrate_recovery_env(self, source_path: str) -> OperationResult:
+        if self._session.platform.name != "windows":
+            return OperationResult(False, "WinRE integration is only available on Windows.")
+
+        options = WinREIntegrationOptions(source_path=Path(source_path))
+        success, message, artifacts = self._session.platform.integrate_recovery_environment(options)
+        if artifacts:
+            detail_lines = [f"{key}: {value}" for key, value in artifacts.items()]
+            message = f"{message}\n\n" + "\n".join(detail_lines)
+        return OperationResult(success=success, message=message)
+
+
+class BootRepairWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Boot Repair")
+        self._session = session
+        self._status_callback = status_callback
+
+        options_page = QWizardPage()
+        options_page.setTitle("Boot Repair Options")
+        options_layout = QFormLayout(options_page)
+        self._system_root_input = QLineEdit("C:\\Windows")
+        self._system_root_input.textChanged.connect(options_page.completeChanged)
+        self._fix_mbr_checkbox = QCheckBox("Fix MBR (bootrec /fixmbr)")
+        self._fix_mbr_checkbox.setChecked(True)
+        self._fix_boot_checkbox = QCheckBox("Fix boot sector (bootrec /fixboot)")
+        self._fix_boot_checkbox.setChecked(True)
+        self._rebuild_bcd_checkbox = QCheckBox("Rebuild BCD store (bootrec /rebuildbcd + bcdboot)")
+        self._rebuild_bcd_checkbox.setChecked(True)
+        options_layout.addRow("System root:", self._system_root_input)
+        options_layout.addRow(self._fix_mbr_checkbox)
+        options_layout.addRow(self._fix_boot_checkbox)
+        options_layout.addRow(self._rebuild_bcd_checkbox)
+        options_page.isComplete = lambda: bool(self._system_root_input.text().strip())
+
+        confirm_str = session.safety.generate_confirmation_string("boot-repair")
+        confirm_page = ConfirmationPage(
+            "Confirm Boot Repair",
+            "This will modify Windows boot configuration.",
+            confirm_str,
+        )
+
+        result_page = OperationResultPage(
+            "Boot Repair",
+            self._repair_boot,
+            status_callback,
+            "Running boot repair...",
+        )
+
+        self.addPage(options_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _repair_boot(self) -> OperationResult:
+        if self._session.platform.name != "windows":
+            return OperationResult(False, "Boot repair is only available on Windows.")
+
+        options = BootRepairOptions(
+            system_root=Path(self._system_root_input.text().strip()),
+            fix_mbr=self._fix_mbr_checkbox.isChecked(),
+            fix_boot=self._fix_boot_checkbox.isChecked(),
+            rebuild_bcd=self._rebuild_bcd_checkbox.isChecked(),
+        )
+        success, message, artifacts = self._session.platform.repair_boot(options)
+        if artifacts:
+            details = "\n".join(f"{cmd}: {info.get('stderr') or info.get('stdout')}" for cmd, info in artifacts.items())
+            message = f"{message}\n\n{details}"
+        return OperationResult(success=success, message=message)
+
+
+class RebuildMBRWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Rebuild MBR")
+        self._session = session
+        self._status_callback = status_callback
+
+        options_page = QWizardPage()
+        options_page.setTitle("MBR Options")
+        options_layout = QFormLayout(options_page)
+        self._fix_boot_checkbox = QCheckBox("Fix boot sector (bootrec /fixboot)")
+        self._fix_boot_checkbox.setChecked(True)
+        options_layout.addRow(self._fix_boot_checkbox)
+
+        confirm_str = session.safety.generate_confirmation_string("mbr")
+        confirm_page = ConfirmationPage(
+            "Confirm MBR Rebuild",
+            "This will rewrite the MBR boot code.",
+            confirm_str,
+        )
+
+        result_page = OperationResultPage(
+            "Rebuild MBR",
+            self._rebuild_mbr,
+            status_callback,
+            "Rebuilding MBR...",
+        )
+
+        self.addPage(options_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _rebuild_mbr(self) -> OperationResult:
+        if self._session.platform.name != "windows":
+            return OperationResult(False, "MBR rebuild is only available on Windows.")
+
+        options = RebuildMBROptions(fix_boot=self._fix_boot_checkbox.isChecked())
+        success, message = self._session.platform.rebuild_mbr(options)
+        return OperationResult(success=success, message=message)
+
+
+class UEFIBootOptionsWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("UEFI Boot Options Manager")
+        self._session = session
+        self._status_callback = status_callback
+
+        options_page = QWizardPage()
+        options_page.setTitle("UEFI Options")
+        options_layout = QFormLayout(options_page)
+        self._action_combo = QComboBox()
+        self._action_combo.addItem("List UEFI entries", "list")
+        self._action_combo.addItem("Set default entry", "set-default")
+        self._identifier_input = QLineEdit()
+        self._identifier_input.setPlaceholderText("{bootmgr} or GUID")
+        self._action_combo.currentIndexChanged.connect(options_page.completeChanged)
+        self._identifier_input.textChanged.connect(options_page.completeChanged)
+        options_layout.addRow("Action:", self._action_combo)
+        options_layout.addRow("Identifier:", self._identifier_input)
+
+        def is_complete() -> bool:
+            action = self._action_combo.currentData()
+            if action == "set-default":
+                return bool(self._identifier_input.text().strip())
+            return True
+
+        options_page.isComplete = is_complete  # type: ignore[assignment]
+
+        result_page = OperationResultPage(
+            "UEFI Boot Options",
+            self._manage_uefi_options,
+            status_callback,
+            "Managing UEFI boot options...",
+        )
+
+        self.addPage(options_page)
+        self.addPage(result_page)
+
+    def _manage_uefi_options(self) -> OperationResult:
+        if self._session.platform.name != "windows":
+            return OperationResult(False, "UEFI boot option management is only available on Windows.")
+
+        options = UEFIBootOptions(
+            action=self._action_combo.currentData(),
+            identifier=self._identifier_input.text().strip() or None,
+        )
+        success, message, artifacts = self._session.platform.manage_uefi_boot_options(options)
+        output = artifacts.get("output")
+        if output:
+            message = f"{message}\n\n{output}"
+        return OperationResult(success=success, message=message)
+
+
+class WindowsToGoWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Windows To Go Creator")
+        self._session = session
+        self._status_callback = status_callback
+
+        image_page = OpenFilePage(
+            "Select Windows Image",
+            "Select the Windows image (WIM/ESD) to deploy.",
+            "Select Windows Image",
+            "Image Files (*.wim *.esd);;All Files (*)",
+        )
+
+        options_page = QWizardPage()
+        options_page.setTitle("Target Settings")
+        options_layout = QFormLayout(options_page)
+        self._target_drive_input = QLineEdit()
+        self._target_drive_input.setPlaceholderText("E:")
+        self._target_drive_input.textChanged.connect(options_page.completeChanged)
+        self._index_input = QLineEdit("1")
+        self._index_input.textChanged.connect(options_page.completeChanged)
+        self._label_input = QLineEdit()
+        options_layout.addRow("Target drive:", self._target_drive_input)
+        options_layout.addRow("Image index:", self._index_input)
+        options_layout.addRow("Drive label (optional):", self._label_input)
+
+        def is_complete() -> bool:
+            return bool(self._target_drive_input.text().strip()) and self._index_input.text().strip().isdigit()
+
+        options_page.isComplete = is_complete  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Windows To Go",
+            "This will deploy Windows to the target drive.",
+            session.safety.generate_confirmation_string(self._target_drive_input.text().strip()),
+        )
+        self._target_drive_input.textChanged.connect(
+            lambda: confirm_page.set_confirmation(
+                session.safety.generate_confirmation_string(self._target_drive_input.text().strip())
+            )
+        )
+
+        result_page = OperationResultPage(
+            "Windows To Go",
+            lambda: self._create_windows_to_go(image_page.path()),
+            status_callback,
+            "Creating Windows To Go workspace...",
+        )
+
+        self.addPage(image_page)
+        self.addPage(options_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _create_windows_to_go(self, image_path: str) -> OperationResult:
+        if self._session.platform.name != "windows":
+            return OperationResult(False, "Windows To Go creation is only available on Windows.")
+
+        try:
+            index = int(self._index_input.text().strip())
+        except ValueError:
+            return OperationResult(False, "Image index must be a number.")
+
+        options = WindowsToGoOptions(
+            image_path=Path(image_path),
+            target_drive=self._target_drive_input.text().strip(),
+            apply_index=index,
+            label=self._label_input.text().strip() or None,
+        )
+        success, message, artifacts = self._session.platform.create_windows_to_go(options)
+        if artifacts:
+            details = "\n".join(f"{key}: {value.get('stderr') or value.get('stdout')}" for key, value in artifacts.items())
+            message = f"{message}\n\n{details}"
+        return OperationResult(success=success, message=message)
+
+
+class ResetWindowsPasswordWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Reset Windows Password")
+        self._session = session
+        self._status_callback = status_callback
+
+        options_page = QWizardPage()
+        options_page.setTitle("Account Information")
+        options_layout = QFormLayout(options_page)
+        self._username_input = QLineEdit()
+        self._username_input.textChanged.connect(options_page.completeChanged)
+        self._password_input = QLineEdit()
+        self._password_input.setEchoMode(QLineEdit.Password)
+        self._password_input.textChanged.connect(options_page.completeChanged)
+        options_layout.addRow("Username:", self._username_input)
+        options_layout.addRow("New password:", self._password_input)
+        options_page.isComplete = lambda: bool(self._username_input.text().strip() and self._password_input.text().strip())
+
+        confirm_page = ConfirmationPage(
+            "Confirm Password Reset",
+            "This will reset the password for the selected account.",
+            session.safety.generate_confirmation_string(self._username_input.text().strip()),
+        )
+        self._username_input.textChanged.connect(
+            lambda: confirm_page.set_confirmation(
+                session.safety.generate_confirmation_string(self._username_input.text().strip())
+            )
+        )
+
+        result_page = OperationResultPage(
+            "Reset Windows Password",
+            self._reset_password,
+            status_callback,
+            "Resetting password...",
+        )
+
+        self.addPage(options_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _reset_password(self) -> OperationResult:
+        if self._session.platform.name != "windows":
+            return OperationResult(False, "Windows password reset is only available on Windows.")
+
+        options = WindowsPasswordResetOptions(
+            username=self._username_input.text().strip(),
+            new_password=self._password_input.text().strip(),
+        )
+        success, message = self._session.platform.reset_windows_password(options)
         return OperationResult(success=success, message=message)
 
 

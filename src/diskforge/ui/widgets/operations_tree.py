@@ -45,6 +45,7 @@ class OperationsTreeWidget(QTreeView):
         backup_icon = self._icon("document-save", QStyle.SP_DialogSaveButton)
         tools_icon = self._icon("preferences-system", QStyle.SP_ToolBarHorizontalExtensionButton)
         cleanup_icon = self._icon("user-trash", QStyle.SP_TrashIcon)
+        recovery_icon = self._icon("dialog-warning", QStyle.SP_MessageBoxWarning)
 
         self._add_category(
             "Wizards",
@@ -108,6 +109,19 @@ class OperationsTreeWidget(QTreeView):
                     self._icon("document-save", QStyle.SP_DialogSaveButton),
                 ),
                 ("Disk Restore", "restore_backup", self._icon("document-open", QStyle.SP_DirOpenIcon)),
+            ],
+        )
+
+        self._add_category(
+            "Boot & Recovery",
+            recovery_icon,
+            [
+                ("Integrate to Recovery Environment", "integrate_recovery_env", self._icon("media-optical", QStyle.SP_DriveCDIcon)),
+                ("Boot Repair", "boot_repair", self._icon("view-refresh", QStyle.SP_BrowserReload)),
+                ("Rebuild MBR", "rebuild_mbr", self._icon("view-refresh", QStyle.SP_BrowserReload)),
+                ("UEFI BIOS Boot Options", "uefi_boot_manager", self._icon("preferences-system", QStyle.SP_ComputerIcon)),
+                ("Windows To Go Creator", "windows_to_go", self._icon("drive-removable-media", QStyle.SP_DriveFDIcon)),
+                ("Reset Windows Password", "reset_windows_password", self._icon("dialog-password", QStyle.SP_MessageBoxInformation)),
             ],
         )
 
