@@ -759,8 +759,8 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(details_group)
 
         # BitLocker panel
-        bitlocker_group = QGroupBox("BitLocker")
-        bitlocker_layout = QVBoxLayout(bitlocker_group)
+        self._bitlocker_group = QGroupBox("BitLocker")
+        bitlocker_layout = QVBoxLayout(self._bitlocker_group)
 
         self._bitlocker_volume_label = QLabel("Volume: (none)")
         self._bitlocker_volume_label.setObjectName("bitlockerVolumeLabel")
@@ -787,7 +787,7 @@ class MainWindow(QMainWindow):
         bitlocker_button_row.addStretch()
         bitlocker_layout.addLayout(bitlocker_button_row)
 
-        right_layout.addWidget(bitlocker_group)
+        right_layout.addWidget(self._bitlocker_group)
 
         # Pending operations panel
         pending_group = QGroupBox("Pending Operations")
@@ -964,6 +964,7 @@ class MainWindow(QMainWindow):
 
     def _update_bitlocker_availability(self) -> None:
         supported = self._bitlocker_supported()
+        self._bitlocker_group.setVisible(supported)
         for action_key in ("bitlocker_status", "bitlocker_enable", "bitlocker_disable"):
             self._actions[action_key].setEnabled(supported)
 
@@ -977,9 +978,6 @@ class MainWindow(QMainWindow):
         if supported:
             self._bitlocker_volume_label.setText("Volume: (none)")
             self._bitlocker_status_label.setText("Select a mounted volume to view BitLocker status.")
-        else:
-            self._bitlocker_volume_label.setText("Volume: (unsupported)")
-            self._bitlocker_status_label.setText("BitLocker is only available on Windows.")
 
     def _update_danger_mode_indicator(self) -> None:
         """Update danger mode indicator."""
