@@ -58,6 +58,11 @@ from diskforge.ui.views.wizards import (
     SplitPartitionWizard,
     ExtendPartitionWizard,
     ShrinkPartitionWizard,
+    AllocateFreeSpaceWizard,
+    OneClickAdjustSpaceWizard,
+    QuickPartitionWizard,
+    PartitionAttributesWizard,
+    InitializeDiskWizard,
     WipeWizard,
     PartitionRecoveryWizard,
     Align4KWizard,
@@ -119,6 +124,11 @@ class MainWindow(QMainWindow):
             "split_partition": QAction("Split Partition...", self),
             "extend_partition": QAction("Extend Partition...", self),
             "shrink_partition": QAction("Shrink Partition...", self),
+            "allocate_free_space": QAction("Allocate Free Space...", self),
+            "one_click_adjust_space": QAction("One-Click Adjust Space...", self),
+            "quick_partition": QAction("Quick Partition...", self),
+            "edit_partition_attributes": QAction("Edit Partition Attributes...", self),
+            "initialize_disk": QAction("Initialize Disk...", self),
             "wipe_device": QAction("Wipe/Secure Erase...", self),
             "partition_recovery": QAction("Partition Recovery...", self),
             "align_4k": QAction("Align 4K...", self),
@@ -146,6 +156,11 @@ class MainWindow(QMainWindow):
             "split_partition": DiskForgeIcons.CREATE_PARTITION,
             "extend_partition": DiskForgeIcons.CREATE_PARTITION,
             "shrink_partition": DiskForgeIcons.FORMAT_PARTITION,
+            "allocate_free_space": DiskForgeIcons.CREATE_PARTITION,
+            "one_click_adjust_space": DiskForgeIcons.CREATE_PARTITION,
+            "quick_partition": DiskForgeIcons.CREATE_PARTITION,
+            "edit_partition_attributes": DiskForgeIcons.FORMAT_PARTITION,
+            "initialize_disk": DiskForgeIcons.CLONE_DISK,
             "wipe_device": DiskForgeIcons.DELETE_PARTITION,
             "partition_recovery": DiskForgeIcons.RESTORE_BACKUP,
             "align_4k": DiskForgeIcons.CREATE_PARTITION,
@@ -177,6 +192,11 @@ class MainWindow(QMainWindow):
         actions["split_partition"].triggered.connect(self._on_split_partition)
         actions["extend_partition"].triggered.connect(self._on_extend_partition)
         actions["shrink_partition"].triggered.connect(self._on_shrink_partition)
+        actions["allocate_free_space"].triggered.connect(self._on_allocate_free_space)
+        actions["one_click_adjust_space"].triggered.connect(self._on_one_click_adjust_space)
+        actions["quick_partition"].triggered.connect(self._on_quick_partition)
+        actions["edit_partition_attributes"].triggered.connect(self._on_edit_partition_attributes)
+        actions["initialize_disk"].triggered.connect(self._on_initialize_disk)
         actions["wipe_device"].triggered.connect(self._on_wipe_device)
         actions["partition_recovery"].triggered.connect(self._on_partition_recovery)
         actions["align_4k"].triggered.connect(self._on_align_4k)
@@ -241,6 +261,14 @@ class MainWindow(QMainWindow):
                     separator_after=True,
                 ),
                 RibbonGroup(
+                    "Space Tools",
+                    columns=[
+                        [RibbonButton(self._actions["allocate_free_space"])],
+                        [RibbonButton(self._actions["one_click_adjust_space"], size="small")],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
                     "Partition Tools",
                     columns=[
                         [RibbonButton(self._actions["merge_partitions"])],
@@ -248,6 +276,7 @@ class MainWindow(QMainWindow):
                             RibbonButton(self._actions["split_partition"], size="small"),
                             RibbonButton(self._actions["align_4k"], size="small"),
                         ],
+                        [RibbonButton(self._actions["edit_partition_attributes"], size="small")],
                     ],
                     separator_after=True,
                 ),
@@ -259,7 +288,13 @@ class MainWindow(QMainWindow):
                             RibbonButton(self._actions["wipe_device"], size="small"),
                             RibbonButton(self._actions["partition_recovery"], size="small"),
                         ],
+                        [RibbonButton(self._actions["initialize_disk"], size="small")],
                     ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Setup",
+                    columns=[[RibbonButton(self._actions["quick_partition"])]],
                     separator_after=True,
                 ),
                 RibbonGroup(
@@ -1117,6 +1152,135 @@ class MainWindow(QMainWindow):
         wizard = ShrinkPartitionWizard(
             self._session,
             partition,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_allocate_free_space(self) -> None:
+        """Handle allocate free space action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk or partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        disk = item if isinstance(item, Disk) else self._find_parent_disk(item) if isinstance(item, Partition) else None
+        if not disk:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk or partition.")
+            return
+
+        if len(disk.partitions) < 2:
+            QMessageBox.warning(self, "Not Enough Partitions", "Select a disk with at least two partitions.")
+            return
+
+        if not self._check_danger_mode():
+            return
+
+        wizard = AllocateFreeSpaceWizard(
+            self._session,
+            disk,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_one_click_adjust_space(self) -> None:
+        """Handle one-click adjust space action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk or partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        disk = item if isinstance(item, Disk) else self._find_parent_disk(item) if isinstance(item, Partition) else None
+        if not disk:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk or partition.")
+            return
+
+        if not self._check_danger_mode():
+            return
+
+        wizard = OneClickAdjustSpaceWizard(
+            self._session,
+            disk,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_quick_partition(self) -> None:
+        """Handle quick partition action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if not isinstance(item, Disk):
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+            return
+
+        if item.is_system_disk:
+            QMessageBox.critical(self, "System Disk", "Cannot partition the system disk.")
+            return
+
+        if not self._check_danger_mode():
+            return
+
+        wizard = QuickPartitionWizard(
+            self._session,
+            item,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_edit_partition_attributes(self) -> None:
+        """Handle edit partition attributes action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if not isinstance(item, Partition):
+            QMessageBox.warning(self, "Invalid Selection", "Please select a partition, not a disk.")
+            return
+
+        if not self._check_danger_mode():
+            return
+
+        wizard = PartitionAttributesWizard(
+            self._session,
+            item,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_initialize_disk(self) -> None:
+        """Handle initialize disk action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if not isinstance(item, Disk):
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+            return
+
+        if item.is_system_disk:
+            QMessageBox.critical(self, "System Disk", "Cannot initialize the system disk.")
+            return
+
+        if not self._check_danger_mode():
+            return
+
+        wizard = InitializeDiskWizard(
+            self._session,
+            item,
             self._status_label.setText,
             self,
         )

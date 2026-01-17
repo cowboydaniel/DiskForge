@@ -457,3 +457,53 @@ class MigrationOptions:
     target_disk_path: str
     include_data: bool = True
     resize_target: bool = True
+
+
+@dataclass
+class AllocateFreeSpaceOptions:
+    """Options for allocating free space between partitions."""
+
+    disk_path: str
+    source_partition_path: str
+    target_partition_path: str
+    size_bytes: int | None = None
+
+
+@dataclass
+class OneClickAdjustOptions:
+    """Options for one-click space adjustment."""
+
+    disk_path: str
+    target_partition_path: str | None = None
+    prioritize_system: bool = True
+
+
+@dataclass
+class QuickPartitionOptions:
+    """Options for quick disk partitioning."""
+
+    disk_path: str
+    partition_count: int = 1
+    filesystem: FileSystem = FileSystem.EXT4
+    label_prefix: str | None = None
+    partition_size_bytes: int | None = None
+    use_entire_disk: bool = True
+
+
+@dataclass
+class PartitionAttributeOptions:
+    """Options for updating partition attributes."""
+
+    partition_path: str
+    drive_letter: str | None = None
+    label: str | None = None
+    partition_type_id: str | None = None
+    serial_number: str | None = None
+
+
+@dataclass
+class InitializeDiskOptions:
+    """Options for initializing a disk."""
+
+    disk_path: str
+    partition_style: PartitionStyle = PartitionStyle.GPT

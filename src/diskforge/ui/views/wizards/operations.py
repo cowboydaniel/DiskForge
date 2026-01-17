@@ -33,6 +33,11 @@ from diskforge.core.models import (
     FormatOptions,
     MergePartitionsOptions,
     MigrationOptions,
+    AllocateFreeSpaceOptions,
+    OneClickAdjustOptions,
+    QuickPartitionOptions,
+    PartitionAttributeOptions,
+    InitializeDiskOptions,
     Partition,
     PartitionCreateOptions,
     PartitionRecoveryOptions,
@@ -921,6 +926,313 @@ class ShrinkPartitionWizard(DiskForgeWizard):
             self._partition.device_path,
             size_bytes,
         )
+        return OperationResult(success=success, message=message)
+
+
+class AllocateFreeSpaceWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Allocate Free Space")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        select_page = QWizardPage()
+        select_page.setTitle("Select Partitions")
+        select_layout = QFormLayout(select_page)
+        self._source_combo = QComboBox()
+        self._target_combo = QComboBox()
+        for partition in disk.partitions:
+            label = partition.label or partition.device_path
+            display = f"{partition.device_path} ({label})"
+            self._source_combo.addItem(display, partition.device_path)
+            self._target_combo.addItem(display, partition.device_path)
+        self._size_input = QLineEdit()
+        self._size_input.setPlaceholderText("Leave blank to allocate all free space")
+        self._source_combo.currentIndexChanged.connect(select_page.completeChanged)
+        self._target_combo.currentIndexChanged.connect(select_page.completeChanged)
+        self._size_input.textChanged.connect(select_page.completeChanged)
+        select_layout.addRow("From partition:", self._source_combo)
+        select_layout.addRow("To partition:", self._target_combo)
+        select_layout.addRow("Size (MiB):", self._size_input)
+
+        def _is_complete() -> bool:
+            if self._source_combo.currentData() == self._target_combo.currentData():
+                return False
+            if self._size_input.text().strip():
+                return _parse_size_mib(self._size_input.text()) is not None
+            return True
+
+        select_page.isComplete = _is_complete  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Allocation",
+            f"This will allocate free space on {disk.device_path}.",
+            session.safety.generate_confirmation_string(disk.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Allocate Free Space",
+            self._allocate_free_space,
+            status_callback,
+            f"Allocating free space on {disk.device_path}...",
+        )
+
+        self.addPage(select_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _allocate_free_space(self) -> OperationResult:
+        size_bytes = _parse_size_mib(self._size_input.text()) if self._size_input.text().strip() else None
+        options = AllocateFreeSpaceOptions(
+            disk_path=self._disk.device_path,
+            source_partition_path=self._source_combo.currentData(),
+            target_partition_path=self._target_combo.currentData(),
+            size_bytes=size_bytes,
+        )
+        success, message = self._session.platform.allocate_free_space(options)
+        return OperationResult(success=success, message=message)
+
+
+class OneClickAdjustSpaceWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("One-Click Adjust Space")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        config_page = QWizardPage()
+        config_page.setTitle("Adjustment Preferences")
+        config_layout = QFormLayout(config_page)
+        self._target_combo = QComboBox()
+        self._target_combo.addItem("Auto-select", None)
+        for partition in disk.partitions:
+            label = partition.label or partition.device_path
+            self._target_combo.addItem(f"{partition.device_path} ({label})", partition.device_path)
+        self._prioritize_system = QCheckBox("Prioritize system partition")
+        self._prioritize_system.setChecked(True)
+        config_layout.addRow("Target partition:", self._target_combo)
+        config_layout.addRow("", self._prioritize_system)
+
+        confirm_page = ConfirmationPage(
+            "Confirm Adjustment",
+            f"This will auto-adjust space on {disk.device_path}.",
+            session.safety.generate_confirmation_string(disk.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "One-Click Adjust",
+            self._adjust_space,
+            status_callback,
+            f"Adjusting space on {disk.device_path}...",
+        )
+
+        self.addPage(config_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _adjust_space(self) -> OperationResult:
+        options = OneClickAdjustOptions(
+            disk_path=self._disk.device_path,
+            target_partition_path=self._target_combo.currentData(),
+            prioritize_system=self._prioritize_system.isChecked(),
+        )
+        success, message = self._session.platform.one_click_adjust_space(options)
+        return OperationResult(success=success, message=message)
+
+
+class QuickPartitionWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Quick Partition")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        setup_page = QWizardPage()
+        setup_page.setTitle("Partition Layout")
+        setup_layout = QFormLayout(setup_page)
+        self._count_input = QLineEdit("2")
+        self._filesystem_combo = QComboBox()
+        self._filesystem_combo.addItems(["ext4", "xfs", "btrfs", "ntfs", "fat32"])
+        self._label_prefix_input = QLineEdit()
+        self._size_input = QLineEdit()
+        self._size_input.setPlaceholderText("Leave blank to auto-size")
+        self._use_entire_disk = QCheckBox("Use entire disk")
+        self._use_entire_disk.setChecked(True)
+        self._count_input.textChanged.connect(setup_page.completeChanged)
+        self._size_input.textChanged.connect(setup_page.completeChanged)
+        self._use_entire_disk.stateChanged.connect(setup_page.completeChanged)
+        setup_layout.addRow("Partition count:", self._count_input)
+        setup_layout.addRow("Filesystem:", self._filesystem_combo)
+        setup_layout.addRow("Label prefix:", self._label_prefix_input)
+        setup_layout.addRow("Size per partition (MiB):", self._size_input)
+        setup_layout.addRow("", self._use_entire_disk)
+
+        def _is_complete() -> bool:
+            if not self._count_input.text().strip().isdigit():
+                return False
+            if not self._use_entire_disk.isChecked():
+                return _parse_size_mib(self._size_input.text()) is not None
+            if self._size_input.text().strip():
+                return _parse_size_mib(self._size_input.text()) is not None
+            return True
+
+        setup_page.isComplete = _is_complete  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Quick Partition",
+            f"This will partition {disk.device_path}.",
+            session.safety.generate_confirmation_string(disk.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Quick Partition",
+            self._quick_partition,
+            status_callback,
+            f"Partitioning {disk.device_path}...",
+        )
+
+        self.addPage(setup_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _quick_partition(self) -> OperationResult:
+        size_bytes = _parse_size_mib(self._size_input.text()) if self._size_input.text().strip() else None
+        options = QuickPartitionOptions(
+            disk_path=self._disk.device_path,
+            partition_count=int(self._count_input.text().strip()),
+            filesystem=FileSystem(self._filesystem_combo.currentText()),
+            label_prefix=self._label_prefix_input.text().strip() or None,
+            partition_size_bytes=size_bytes,
+            use_entire_disk=self._use_entire_disk.isChecked(),
+        )
+        success, message = self._session.platform.quick_partition_disk(options)
+        return OperationResult(success=success, message=message)
+
+
+class PartitionAttributesWizard(DiskForgeWizard):
+    def __init__(self, session: Session, partition: Partition, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Edit Partition Attributes")
+        self._session = session
+        self._partition = partition
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        edit_page = QWizardPage()
+        edit_page.setTitle("Attributes")
+        edit_layout = QFormLayout(edit_page)
+        self._drive_letter_input = QLineEdit()
+        self._label_input = QLineEdit()
+        self._type_id_input = QLineEdit()
+        self._serial_input = QLineEdit()
+        self._drive_letter_input.setPlaceholderText("Windows only, e.g. D")
+        self._type_id_input.setPlaceholderText("GPT type GUID")
+        self._serial_input.setPlaceholderText("Volume serial number")
+        for input_field in (
+            self._drive_letter_input,
+            self._label_input,
+            self._type_id_input,
+            self._serial_input,
+        ):
+            input_field.textChanged.connect(edit_page.completeChanged)
+        edit_layout.addRow("Drive letter:", self._drive_letter_input)
+        edit_layout.addRow("Label:", self._label_input)
+        edit_layout.addRow("Partition type ID:", self._type_id_input)
+        edit_layout.addRow("Serial number:", self._serial_input)
+
+        def _is_complete() -> bool:
+            drive_letter = self._drive_letter_input.text().strip().upper()
+            if drive_letter and (len(drive_letter) != 1 or not drive_letter.isalpha()):
+                return False
+            return any(
+                field.text().strip()
+                for field in (
+                    self._drive_letter_input,
+                    self._label_input,
+                    self._type_id_input,
+                    self._serial_input,
+                )
+            )
+
+        edit_page.isComplete = _is_complete  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Update",
+            f"This will update attributes for {partition.device_path}.",
+            session.safety.generate_confirmation_string(partition.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Update Attributes",
+            self._update_attributes,
+            status_callback,
+            f"Updating attributes for {partition.device_path}...",
+        )
+
+        self.addPage(edit_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _update_attributes(self) -> OperationResult:
+        drive_letter = self._drive_letter_input.text().strip().upper() or None
+        options = PartitionAttributeOptions(
+            partition_path=self._partition.device_path,
+            drive_letter=drive_letter,
+            label=self._label_input.text().strip() or None,
+            partition_type_id=self._type_id_input.text().strip() or None,
+            serial_number=self._serial_input.text().strip() or None,
+        )
+        success, message = self._session.platform.change_partition_attributes(options)
+        return OperationResult(success=success, message=message)
+
+
+class InitializeDiskWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Initialize Disk")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        style_page = QWizardPage()
+        style_page.setTitle("Partition Style")
+        style_layout = QFormLayout(style_page)
+        self._style_combo = QComboBox()
+        self._style_combo.addItem("GPT", PartitionStyle.GPT)
+        self._style_combo.addItem("MBR", PartitionStyle.MBR)
+        style_layout.addRow("Initialize as:", self._style_combo)
+        style_layout.addRow(QLabel(f"Target disk: {disk.device_path}"))
+
+        confirm_page = ConfirmationPage(
+            "Confirm Initialization",
+            f"This will initialize {disk.device_path}.",
+            session.safety.generate_confirmation_string(disk.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Initialize Disk",
+            self._initialize_disk,
+            status_callback,
+            f"Initializing {disk.device_path}...",
+        )
+
+        self.addPage(style_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _initialize_disk(self) -> OperationResult:
+        options = InitializeDiskOptions(
+            disk_path=self._disk.device_path,
+            partition_style=self._style_combo.currentData(),
+        )
+        success, message = self._session.platform.initialize_disk(options)
         return OperationResult(success=success, message=message)
 
 
