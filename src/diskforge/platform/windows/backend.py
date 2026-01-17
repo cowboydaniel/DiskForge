@@ -33,6 +33,16 @@ from diskforge.core.models import (
     PartitionStyle,
 )
 from diskforge.platform.base import CommandResult, PlatformBackend
+from diskforge.platform.file_ops import (
+    build_free_space_report,
+    cleanup_junk_files,
+    move_application,
+    normalize_roots,
+    remove_paths,
+    scan_duplicate_files,
+    scan_junk_files,
+    scan_large_files,
+)
 from diskforge.platform.windows.parsers import (
     build_disk_from_powershell,
     parse_diskpart_output,
@@ -59,6 +69,13 @@ if TYPE_CHECKING:
         PartitionCreateOptions,
         PartitionRecoveryOptions,
         DynamicVolumeResizeMoveOptions,
+        DuplicateRemovalOptions,
+        DuplicateScanOptions,
+        FileRemovalOptions,
+        FreeSpaceOptions,
+        JunkCleanupOptions,
+        LargeFileScanOptions,
+        MoveApplicationOptions,
         ResizeMoveOptions,
         SplitPartitionOptions,
         WipeOptions,
@@ -2126,3 +2143,75 @@ For support: https://diskforge.dev/support
         """Check if a device is the system disk."""
         disk = self.get_disk_info(device_path)
         return disk.is_system_disk if disk else False
+
+    # ==================== Storage Cleanup Operations ====================
+
+    def _default_cleanup_roots(self) -> list[Path]:
+        temp_paths = [Path(os.getenv("TEMP", "")), Path(os.getenv("TMP", ""))]
+        user_profile = Path(os.getenv("USERPROFILE", ""))
+        recycle = user_profile / "AppData/Local/Temp"
+        candidates = temp_paths + [recycle]
+        return [path for path in candidates if path and path.exists()]
+
+    def _default_user_roots(self) -> list[Path]:
+        user_profile = Path(os.getenv("USERPROFILE", ""))
+        roots = [
+            user_profile,
+            user_profile / "Downloads",
+            user_profile / "Desktop",
+            user_profile / "Documents",
+        ]
+        return [root for root in roots if root.exists()]
+
+    def scan_free_space(self, options: FreeSpaceOptions) -> FreeSpaceReport:
+        roots = normalize_roots(options.roots, self._default_user_roots())
+        return build_free_space_report(
+            roots,
+            options.exclude_patterns,
+            junk_max_files=options.junk_max_files,
+            large_min_size_bytes=options.large_min_size_bytes,
+            large_max_results=options.large_max_results,
+            duplicate_min_size_bytes=options.duplicate_min_size_bytes,
+        )
+
+    def scan_junk_files(self, options: JunkCleanupOptions) -> JunkScanResult:
+        roots = normalize_roots(options.roots, self._default_cleanup_roots())
+        return scan_junk_files(roots, options.exclude_patterns, max_files=options.max_files)
+
+    def cleanup_junk_files(self, options: JunkCleanupOptions) -> JunkCleanupResult:
+        roots = normalize_roots(options.roots, self._default_cleanup_roots())
+        return cleanup_junk_files(roots, options.exclude_patterns, max_files=options.max_files)
+
+    def scan_large_files(self, options: LargeFileScanOptions) -> LargeFileScanResult:
+        roots = normalize_roots(options.roots, self._default_user_roots())
+        return scan_large_files(
+            roots,
+            options.exclude_patterns,
+            min_size_bytes=options.min_size_bytes,
+            max_results=options.max_results,
+        )
+
+    def remove_large_files(self, options: FileRemovalOptions) -> FileRemovalResult:
+        return remove_paths([Path(path) for path in options.paths])
+
+    def scan_duplicate_files(self, options: DuplicateScanOptions) -> DuplicateScanResult:
+        roots = normalize_roots(options.roots, self._default_user_roots())
+        return scan_duplicate_files(
+            roots,
+            options.exclude_patterns,
+            min_size_bytes=options.min_size_bytes,
+        )
+
+    def remove_duplicate_files(self, options: DuplicateRemovalOptions) -> FileRemovalResult:
+        paths: list[str] = []
+        for group in options.duplicate_groups:
+            if not group.paths:
+                continue
+            keep = group.paths[0]
+            for path in group.paths:
+                if path != keep:
+                    paths.append(path)
+        return remove_paths([Path(path) for path in paths])
+
+    def move_application(self, options: MoveApplicationOptions) -> MoveApplicationResult:
+        return move_application(Path(options.source_path), Path(options.destination_root))

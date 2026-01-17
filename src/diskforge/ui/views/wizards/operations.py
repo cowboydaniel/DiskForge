@@ -44,16 +44,24 @@ from diskforge.core.models import (
     PartitionAttributeOptions,
     InitializeDiskOptions,
     DynamicVolumeResizeMoveOptions,
+    DuplicateRemovalOptions,
+    DuplicateScanOptions,
+    FileRemovalOptions,
     Partition,
     PartitionRole,
     PartitionCreateOptions,
     PartitionRecoveryOptions,
     PartitionStyle,
+    FreeSpaceOptions,
+    JunkCleanupOptions,
+    LargeFileScanOptions,
+    MoveApplicationOptions,
     ResizeMoveOptions,
     SplitPartitionOptions,
     WipeOptions,
 )
 from diskforge.core.session import Session
+from diskforge.core.safety import DangerMode
 
 
 @dataclass(frozen=True)
@@ -70,6 +78,16 @@ def _parse_size_mib(value: str) -> int | None:
     if size_mib <= 0:
         return None
     return size_mib * 1024 * 1024
+
+
+def _format_bytes(size_bytes: int) -> str:
+    units = ["B", "KiB", "MiB", "GiB", "TiB"]
+    size = float(size_bytes)
+    for unit in units:
+        if size < 1024 or unit == units[-1]:
+            return f"{size:.2f} {unit}"
+        size /= 1024
+    return f"{size:.2f} TiB"
 
 
 class ConfirmationPage(QWizardPage):
@@ -108,6 +126,23 @@ class ConfirmationPage(QWizardPage):
         )
         self._confirm_input.clear()
         self.completeChanged.emit()
+
+
+class DynamicConfirmationPage(ConfirmationPage):
+    """Confirmation page that updates its phrase on entry."""
+
+    def __init__(
+        self,
+        title: str,
+        message: str,
+        confirmation_supplier: Callable[[], str],
+        parent: QWizard | None = None,
+    ) -> None:
+        super().__init__(title, message, "", parent)
+        self._confirmation_supplier = confirmation_supplier
+
+    def initializePage(self) -> None:
+        self.set_confirmation(self._confirmation_supplier())
 
 
 class OutputPathPage(QWizardPage):
@@ -1879,3 +1914,337 @@ class SystemMigrationWizard(DiskForgeWizard):
         )
         success, message = self._session.platform.migrate_system(options)
         return OperationResult(success=success, message=message)
+
+
+class FreeSpaceWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Free Up Space")
+        self._session = session
+        self._status_callback = status_callback
+
+        self._root_page = DirectoryPage(
+            "Select Scan Root",
+            "Choose a folder to scan for reclaimable space.",
+            "Select Folder",
+        )
+
+        options_page = QWizardPage()
+        options_page.setTitle("Scan Options")
+        options_layout = QFormLayout(options_page)
+        self._large_min_input = QLineEdit("512")
+        self._duplicate_min_input = QLineEdit("32")
+        self._junk_max_input = QLineEdit("500")
+        options_layout.addRow("Large file threshold (MiB):", self._large_min_input)
+        options_layout.addRow("Duplicate scan min size (MiB):", self._duplicate_min_input)
+        options_layout.addRow("Max junk files:", self._junk_max_input)
+
+        result_page = OperationResultPage(
+            "Free Space Report",
+            self._scan_free_space,
+            status_callback,
+            "Scanning for reclaimable space...",
+        )
+
+        self.addPage(self._root_page)
+        self.addPage(options_page)
+        self.addPage(result_page)
+
+    def _scan_free_space(self) -> OperationResult:
+        large_min = _parse_size_mib(self._large_min_input.text()) or 512 * 1024 * 1024
+        duplicate_min = _parse_size_mib(self._duplicate_min_input.text()) or 32 * 1024 * 1024
+        try:
+            junk_max = int(self._junk_max_input.text().strip())
+        except ValueError:
+            junk_max = 500
+        options = FreeSpaceOptions(
+            roots=[self._root_page.path()],
+            large_min_size_bytes=large_min,
+            duplicate_min_size_bytes=duplicate_min,
+            junk_max_files=junk_max,
+        )
+        report = self._session.platform.scan_free_space(options)
+        message = (
+            "Reclaimable space summary:\n"
+            f"Total: {_format_bytes(report.total_reclaimable_bytes)}\n"
+            f"Junk: {_format_bytes(report.junk_bytes)}\n"
+            f"Large files: {_format_bytes(report.large_files_bytes)}\n"
+            f"Duplicates: {_format_bytes(report.duplicate_bytes)}"
+        )
+        return OperationResult(success=True, message=message)
+
+
+class JunkCleanupWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Junk File Cleanup")
+        self._session = session
+        self._status_callback = status_callback
+
+        self._root_page = DirectoryPage(
+            "Select Cleanup Root",
+            "Choose a folder to clean junk files from.",
+            "Select Folder",
+        )
+
+        options_page = QWizardPage()
+        options_page.setTitle("Cleanup Options")
+        options_layout = QFormLayout(options_page)
+        self._junk_max_input = QLineEdit("500")
+        options_layout.addRow("Max junk files:", self._junk_max_input)
+
+        confirm_page = DynamicConfirmationPage(
+            "Confirm Junk Cleanup",
+            "This will permanently delete junk files in the selected folder.",
+            lambda: session.safety.generate_confirmation_string(self._root_page.path()),
+        )
+
+        result_page = OperationResultPage(
+            "Cleanup Results",
+            self._cleanup_junk,
+            status_callback,
+            "Cleaning junk files...",
+        )
+
+        self.addPage(self._root_page)
+        self.addPage(options_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _cleanup_junk(self) -> OperationResult:
+        if self._session.danger_mode == DangerMode.DISABLED:
+            return OperationResult(
+                success=False,
+                message="Danger Mode is required to remove junk files.",
+            )
+        try:
+            junk_max = int(self._junk_max_input.text().strip())
+        except ValueError:
+            junk_max = 500
+        options = JunkCleanupOptions(
+            roots=[self._root_page.path()],
+            max_files=junk_max,
+        )
+        result = self._session.platform.cleanup_junk_files(options)
+        message = (
+            f"Removed {result.total_files_removed} files.\n"
+            f"Failed: {result.total_files_failed} files.\n"
+            f"Freed: {_format_bytes(result.freed_bytes)}"
+        )
+        return OperationResult(success=True, message=message)
+
+
+class LargeFilesWizard(DiskForgeWizard):
+    OPTIONS_PAGE = 0
+    CONFIG_PAGE = 1
+    CONFIRM_PAGE = 2
+    RESULT_PAGE = 3
+
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Large File Discovery")
+        self._session = session
+        self._status_callback = status_callback
+
+        self._root_page = DirectoryPage(
+            "Select Scan Root",
+            "Choose a folder to scan for large files.",
+            "Select Folder",
+        )
+
+        class _ConfigPage(QWizardPage):
+            def __init__(self, wizard: LargeFilesWizard) -> None:
+                super().__init__()
+                self._wizard = wizard
+                self.setTitle("Scan Options")
+                layout = QFormLayout(self)
+                wizard._large_min_input = QLineEdit("1024")
+                wizard._large_max_input = QLineEdit("50")
+                wizard._remove_checkbox = QCheckBox("Remove discovered files after scan")
+                layout.addRow("Minimum size (MiB):", wizard._large_min_input)
+                layout.addRow("Max results:", wizard._large_max_input)
+                layout.addRow("", wizard._remove_checkbox)
+
+            def nextId(self) -> int:
+                if self._wizard._remove_checkbox.isChecked():
+                    return LargeFilesWizard.CONFIRM_PAGE
+                return LargeFilesWizard.RESULT_PAGE
+
+        self._config_page = _ConfigPage(self)
+
+        confirm_page = DynamicConfirmationPage(
+            "Confirm Removal",
+            "This will permanently delete all discovered large files.",
+            lambda: session.safety.generate_confirmation_string(self._root_page.path()),
+        )
+
+        result_page = OperationResultPage(
+            "Large File Results",
+            self._scan_large_files,
+            status_callback,
+            "Scanning for large files...",
+        )
+
+        self.setPage(self.OPTIONS_PAGE, self._root_page)
+        self.setPage(self.CONFIG_PAGE, self._config_page)
+        self.setPage(self.CONFIRM_PAGE, confirm_page)
+        self.setPage(self.RESULT_PAGE, result_page)
+        self.setStartId(self.OPTIONS_PAGE)
+
+    def _scan_large_files(self) -> OperationResult:
+        min_size = _parse_size_mib(self._large_min_input.text()) or 1024 * 1024 * 1024
+        try:
+            max_results = int(self._large_max_input.text().strip())
+        except ValueError:
+            max_results = 50
+        scan = self._session.platform.scan_large_files(
+            LargeFileScanOptions(
+                roots=[self._root_page.path()],
+                min_size_bytes=min_size,
+                max_results=max_results,
+            )
+        )
+        message_lines = [
+            f"Found {scan.file_count} large files totaling {_format_bytes(scan.total_size_bytes)}."
+        ]
+        if self._remove_checkbox.isChecked():
+            if self._session.danger_mode == DangerMode.DISABLED:
+                return OperationResult(
+                    success=False,
+                    message="Danger Mode is required to remove large files.",
+                )
+            removal = self._session.platform.remove_large_files(
+                FileRemovalOptions(paths=[entry.path for entry in scan.files])
+            )
+            message_lines.append(removal.message)
+        return OperationResult(success=True, message="\n".join(message_lines))
+
+
+class DuplicateFilesWizard(DiskForgeWizard):
+    OPTIONS_PAGE = 0
+    CONFIG_PAGE = 1
+    CONFIRM_PAGE = 2
+    RESULT_PAGE = 3
+
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Duplicate File Detection")
+        self._session = session
+        self._status_callback = status_callback
+
+        self._root_page = DirectoryPage(
+            "Select Scan Root",
+            "Choose a folder to scan for duplicate files.",
+            "Select Folder",
+        )
+
+        class _ConfigPage(QWizardPage):
+            def __init__(self, wizard: DuplicateFilesWizard) -> None:
+                super().__init__()
+                self._wizard = wizard
+                self.setTitle("Scan Options")
+                layout = QFormLayout(self)
+                wizard._duplicate_min_input = QLineEdit("32")
+                wizard._remove_checkbox = QCheckBox("Remove duplicates after scan (keep one copy)")
+                layout.addRow("Minimum size (MiB):", wizard._duplicate_min_input)
+                layout.addRow("", wizard._remove_checkbox)
+
+            def nextId(self) -> int:
+                if self._wizard._remove_checkbox.isChecked():
+                    return DuplicateFilesWizard.CONFIRM_PAGE
+                return DuplicateFilesWizard.RESULT_PAGE
+
+        self._config_page = _ConfigPage(self)
+
+        confirm_page = DynamicConfirmationPage(
+            "Confirm Removal",
+            "This will permanently delete duplicate files, keeping one copy.",
+            lambda: session.safety.generate_confirmation_string(self._root_page.path()),
+        )
+
+        result_page = OperationResultPage(
+            "Duplicate Scan Results",
+            self._scan_duplicates,
+            status_callback,
+            "Scanning for duplicate files...",
+        )
+
+        self.setPage(self.OPTIONS_PAGE, self._root_page)
+        self.setPage(self.CONFIG_PAGE, self._config_page)
+        self.setPage(self.CONFIRM_PAGE, confirm_page)
+        self.setPage(self.RESULT_PAGE, result_page)
+        self.setStartId(self.OPTIONS_PAGE)
+
+    def _scan_duplicates(self) -> OperationResult:
+        min_size = _parse_size_mib(self._duplicate_min_input.text()) or 32 * 1024 * 1024
+        scan = self._session.platform.scan_duplicate_files(
+            DuplicateScanOptions(
+                roots=[self._root_page.path()],
+                min_size_bytes=min_size,
+            )
+        )
+        message_lines = [
+            f"Found {len(scan.duplicate_groups)} duplicate groups totaling "
+            f"{_format_bytes(scan.total_wasted_bytes)} of potential savings."
+        ]
+        if self._remove_checkbox.isChecked():
+            if self._session.danger_mode == DangerMode.DISABLED:
+                return OperationResult(
+                    success=False,
+                    message="Danger Mode is required to remove duplicate files.",
+                )
+            removal = self._session.platform.remove_duplicate_files(
+                DuplicateRemovalOptions(duplicate_groups=scan.duplicate_groups)
+            )
+            message_lines.append(removal.message)
+        return OperationResult(success=True, message="\n".join(message_lines))
+
+
+class MoveApplicationWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Move Applications")
+        self._session = session
+        self._status_callback = status_callback
+
+        self._source_page = DirectoryPage(
+            "Select Application Folder",
+            "Choose the application folder you want to move.",
+            "Select Folder",
+        )
+        self._destination_page = DirectoryPage(
+            "Select Destination Drive",
+            "Choose the destination drive or folder.",
+            "Select Folder",
+        )
+
+        confirm_page = DynamicConfirmationPage(
+            "Confirm Move",
+            "This will move the selected application folder to the destination.",
+            lambda: session.safety.generate_confirmation_string(self._source_page.path()),
+        )
+
+        result_page = OperationResultPage(
+            "Move Results",
+            self._move_application,
+            status_callback,
+            "Moving application...",
+        )
+
+        self.addPage(self._source_page)
+        self.addPage(self._destination_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _move_application(self) -> OperationResult:
+        if self._session.danger_mode == DangerMode.DISABLED:
+            return OperationResult(
+                success=False,
+                message="Danger Mode is required to move applications.",
+            )
+        options = MoveApplicationOptions(
+            source_path=self._source_page.path(),
+            destination_root=self._destination_page.path(),
+        )
+        result = self._session.platform.move_application(options)
+        return OperationResult(success=result.success, message=result.message)

@@ -77,6 +77,11 @@ from diskforge.ui.views.wizards import (
     ConvertPartitionRoleWizard,
     ConvertDiskLayoutWizard,
     SystemMigrationWizard,
+    FreeSpaceWizard,
+    JunkCleanupWizard,
+    LargeFilesWizard,
+    DuplicateFilesWizard,
+    MoveApplicationWizard,
 )
 
 
@@ -152,6 +157,11 @@ class MainWindow(QMainWindow):
             "convert_partition_role": QAction("Convert Primary/Logical...", self),
             "convert_disk_layout": QAction("Convert Dynamic/Basic...", self),
             "migrate_system": QAction("OS/System Migration...", self),
+            "free_space": QAction("Free Up Space...", self),
+            "junk_cleanup": QAction("Junk File Cleanup...", self),
+            "large_files": QAction("Large File Finder...", self),
+            "duplicate_files": QAction("Duplicate File Finder...", self),
+            "move_applications": QAction("Move Applications...", self),
         }
 
         icon_map = {
@@ -193,6 +203,11 @@ class MainWindow(QMainWindow):
             "convert_partition_role": DiskForgeIcons.CREATE_PARTITION,
             "convert_disk_layout": DiskForgeIcons.CLONE_DISK,
             "migrate_system": DiskForgeIcons.CLONE_DISK,
+            "free_space": DiskForgeIcons.REFRESH,
+            "junk_cleanup": DiskForgeIcons.DELETE_PARTITION,
+            "large_files": DiskForgeIcons.FORMAT_PARTITION,
+            "duplicate_files": DiskForgeIcons.CREATE_PARTITION,
+            "move_applications": DiskForgeIcons.CLONE_DISK,
         }
 
         for action_key, icon_name in icon_map.items():
@@ -238,6 +253,11 @@ class MainWindow(QMainWindow):
         actions["convert_partition_role"].triggered.connect(self._on_convert_partition_role)
         actions["convert_disk_layout"].triggered.connect(self._on_convert_disk_layout)
         actions["migrate_system"].triggered.connect(self._on_migrate_system)
+        actions["free_space"].triggered.connect(self._on_free_space)
+        actions["junk_cleanup"].triggered.connect(self._on_junk_cleanup)
+        actions["large_files"].triggered.connect(self._on_large_files)
+        actions["duplicate_files"].triggered.connect(self._on_duplicate_files)
+        actions["move_applications"].triggered.connect(self._on_move_applications)
         actions["clone"].triggered.connect(self._on_clone_disk)
         actions["backup"].triggered.connect(self._on_create_backup)
 
@@ -359,6 +379,31 @@ class MainWindow(QMainWindow):
                 RibbonGroup(
                     "Migration",
                     columns=[[RibbonButton(self._actions["migrate_system"])]],
+                ),
+            ],
+        )
+        ribbon.add_tab(
+            "Cleanup",
+            [
+                RibbonGroup(
+                    "Space Recovery",
+                    columns=[
+                        [RibbonButton(self._actions["free_space"])],
+                        [RibbonButton(self._actions["junk_cleanup"], size="small")],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "File Tools",
+                    columns=[
+                        [RibbonButton(self._actions["large_files"])],
+                        [RibbonButton(self._actions["duplicate_files"], size="small")],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Apps",
+                    columns=[[RibbonButton(self._actions["move_applications"])]],
                 ),
             ],
         )
@@ -1753,6 +1798,55 @@ class MainWindow(QMainWindow):
             self._session,
             source,
             target_disks,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_free_space(self) -> None:
+        """Handle free space scan action."""
+        wizard = FreeSpaceWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_junk_cleanup(self) -> None:
+        """Handle junk cleanup action."""
+        if not self._check_danger_mode():
+            return
+        wizard = JunkCleanupWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_large_files(self) -> None:
+        """Handle large file discovery action."""
+        wizard = LargeFilesWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_duplicate_files(self) -> None:
+        """Handle duplicate file discovery action."""
+        wizard = DuplicateFilesWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_move_applications(self) -> None:
+        """Handle move applications action."""
+        if not self._check_danger_mode():
+            return
+        wizard = MoveApplicationWizard(
+            self._session,
             self._status_label.setText,
             self,
         )

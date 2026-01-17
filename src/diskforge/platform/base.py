@@ -27,6 +27,8 @@ if TYPE_CHECKING:
         ConvertFilesystemOptions,
         ConvertPartitionRoleOptions,
         ConvertSystemDiskOptions,
+        DuplicateRemovalOptions,
+        DuplicateScanOptions,
         MergePartitionsOptions,
         MigrationOptions,
         AllocateFreeSpaceOptions,
@@ -36,9 +38,21 @@ if TYPE_CHECKING:
         InitializeDiskOptions,
         PartitionRecoveryOptions,
         DynamicVolumeResizeMoveOptions,
+        FileRemovalOptions,
+        FreeSpaceOptions,
+        JunkCleanupOptions,
+        LargeFileScanOptions,
+        MoveApplicationOptions,
         ResizeMoveOptions,
         SplitPartitionOptions,
         WipeOptions,
+        DuplicateScanResult,
+        FileRemovalResult,
+        FreeSpaceReport,
+        JunkCleanupResult,
+        JunkScanResult,
+        LargeFileScanResult,
+        MoveApplicationResult,
     )
     from diskforge.core.job import JobContext
 
@@ -597,3 +611,37 @@ class PlatformBackend(ABC):
     @abstractmethod
     def is_system_device(self, device_path: str) -> bool:
         """Check if a device is the system disk."""
+
+    # ==================== Storage Cleanup Operations ====================
+
+    @abstractmethod
+    def scan_free_space(self, options: FreeSpaceOptions) -> FreeSpaceReport:
+        """Summarize reclaimable space in the given roots."""
+
+    @abstractmethod
+    def scan_junk_files(self, options: JunkCleanupOptions) -> JunkScanResult:
+        """Scan for junk files in the given roots."""
+
+    @abstractmethod
+    def cleanup_junk_files(self, options: JunkCleanupOptions) -> JunkCleanupResult:
+        """Remove junk files from the given roots."""
+
+    @abstractmethod
+    def scan_large_files(self, options: LargeFileScanOptions) -> LargeFileScanResult:
+        """Scan for large files in the given roots."""
+
+    @abstractmethod
+    def remove_large_files(self, options: FileRemovalOptions) -> FileRemovalResult:
+        """Remove large files by path."""
+
+    @abstractmethod
+    def scan_duplicate_files(self, options: DuplicateScanOptions) -> DuplicateScanResult:
+        """Scan for duplicate files in the given roots."""
+
+    @abstractmethod
+    def remove_duplicate_files(self, options: DuplicateRemovalOptions) -> FileRemovalResult:
+        """Remove duplicate files based on scan groups."""
+
+    @abstractmethod
+    def move_application(self, options: MoveApplicationOptions) -> MoveApplicationResult:
+        """Move an application directory to another drive."""

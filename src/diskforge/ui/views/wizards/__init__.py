@@ -33,6 +33,11 @@ from diskforge.ui.views.wizards.operations import (
     ConvertPartitionRoleWizard,
     ConvertDiskLayoutWizard,
     SystemMigrationWizard,
+    FreeSpaceWizard,
+    JunkCleanupWizard,
+    LargeFilesWizard,
+    DuplicateFilesWizard,
+    MoveApplicationWizard,
 )
 
 __all__ = [
@@ -68,4 +73,9 @@ __all__ = [
     "ConvertPartitionRoleWizard",
     "ConvertDiskLayoutWizard",
     "SystemMigrationWizard",
+    "FreeSpaceWizard",
+    "JunkCleanupWizard",
+    "LargeFilesWizard",
+    "DuplicateFilesWizard",
+    "MoveApplicationWizard",
 ]

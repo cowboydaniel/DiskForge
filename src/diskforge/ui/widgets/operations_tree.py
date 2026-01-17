@@ -44,6 +44,7 @@ class OperationsTreeWidget(QTreeView):
         partition_icon = self._icon("drive-harddisk", QStyle.SP_DriveHDIcon)
         backup_icon = self._icon("document-save", QStyle.SP_DialogSaveButton)
         tools_icon = self._icon("preferences-system", QStyle.SP_ToolBarHorizontalExtensionButton)
+        cleanup_icon = self._icon("user-trash", QStyle.SP_TrashIcon)
 
         self._add_category(
             "Wizards",
@@ -107,6 +108,18 @@ class OperationsTreeWidget(QTreeView):
                     self._icon("document-save", QStyle.SP_DialogSaveButton),
                 ),
                 ("Disk Restore", "restore_backup", self._icon("document-open", QStyle.SP_DirOpenIcon)),
+            ],
+        )
+
+        self._add_category(
+            "Storage Cleanup",
+            cleanup_icon,
+            [
+                ("Free Up Space", "free_space", self._icon("view-refresh", QStyle.SP_BrowserReload)),
+                ("Junk File Cleanup", "junk_cleanup", self._icon("edit-delete", QStyle.SP_TrashIcon)),
+                ("Large File Finder", "large_files", self._icon("document-open", QStyle.SP_FileDialogDetailedView)),
+                ("Duplicate File Finder", "duplicate_files", self._icon("edit-copy", QStyle.SP_FileDialogContentsView)),
+                ("Move Applications", "move_applications", self._icon("transform-move", QStyle.SP_ArrowUp)),
             ],
         )
 
