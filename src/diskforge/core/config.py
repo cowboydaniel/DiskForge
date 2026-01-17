@@ -83,6 +83,31 @@ class SystemBackupConfig(BaseModel):
     capture_boot_metadata: bool = True
 
 
+class SyncScheduleConfig(BaseModel):
+    """Configuration for sync scheduling and hooks."""
+
+    enabled: bool = False
+    interval_seconds: int | None = Field(default=None, ge=60)
+    on_start_hooks: list[str] = Field(default_factory=list)
+    on_complete_hooks: list[str] = Field(default_factory=list)
+    on_conflict_hooks: list[str] = Field(default_factory=list)
+
+
+class SyncConfig(BaseModel):
+    """Configuration for file sync operations."""
+
+    direction: Literal["one-way", "two-way"] = "one-way"
+    conflict_policy: Literal["source_wins", "target_wins", "newest_wins", "skip"] = "newest_wins"
+    exclude_patterns: list[str] = Field(default_factory=list)
+    schedule: SyncScheduleConfig = Field(default_factory=SyncScheduleConfig)
+    status_file: Path = Field(default_factory=lambda: Path.home() / ".diskforge" / "sync_status.json")
+
+    @field_validator("status_file", mode="before")
+    @classmethod
+    def expand_status_path(cls, v: str | Path) -> Path:
+        return Path(v).expanduser().resolve()
+
+
 class UIConfig(BaseModel):
     """Configuration for the GUI."""
 
@@ -99,6 +124,7 @@ class DiskForgeConfig(BaseModel):
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
     system_backup: SystemBackupConfig = Field(default_factory=SystemBackupConfig)
+    sync: SyncConfig = Field(default_factory=SyncConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
     session_directory: Path = Field(default_factory=lambda: Path.home() / ".diskforge" / "sessions")
     plugin_directories: list[Path] = Field(default_factory=list)
@@ -136,6 +162,8 @@ class DiskForgeConfig(BaseModel):
         self.session_directory.mkdir(parents=True, exist_ok=True)
         if self.backup.temp_directory:
             self.backup.temp_directory.mkdir(parents=True, exist_ok=True)
+        if self.sync.status_file:
+            self.sync.status_file.parent.mkdir(parents=True, exist_ok=True)
 
     def get_session_file(self) -> Path:
         """Get path for a new session report file."""
