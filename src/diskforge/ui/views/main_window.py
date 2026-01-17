@@ -115,6 +115,7 @@ class MainWindow(QMainWindow):
         self._job_model = JobModel(session.job_runner, self)
         self._pending_model = PendingOperationsModel(self)
         self._active_job_id: str | None = None
+        self._selected_partition: Partition | None = None
 
         # Set up UI
         self._apply_aomei_theme()
@@ -123,6 +124,7 @@ class MainWindow(QMainWindow):
         self._setup_central_widget()
         self._setup_statusbar()
         self._update_danger_mode_indicator()
+        self._update_bitlocker_availability()
 
         self._job_model.jobStatusChanged.connect(self._on_job_status_changed)
         self._job_model.jobProgressChanged.connect(self._on_job_progress_changed)
@@ -153,6 +155,9 @@ class MainWindow(QMainWindow):
             "uefi_boot_manager": QAction("UEFI BIOS Boot Options...", self),
             "windows_to_go": QAction("Windows To Go Creator...", self),
             "reset_windows_password": QAction("Reset Windows Password...", self),
+            "bitlocker_status": QAction("BitLocker Status", self),
+            "bitlocker_enable": QAction("Enable BitLocker...", self),
+            "bitlocker_disable": QAction("Disable BitLocker...", self),
             "danger_mode": QAction("Toggle Danger Mode", self),
             "about": QAction("About DiskForge", self),
             "create_partition": QAction("Create Partition...", self),
@@ -213,6 +218,9 @@ class MainWindow(QMainWindow):
             "uefi_boot_manager": DiskForgeIcons.ABOUT,
             "windows_to_go": DiskForgeIcons.CLONE_DISK,
             "reset_windows_password": DiskForgeIcons.DANGER_MODE,
+            "bitlocker_status": DiskForgeIcons.REFRESH,
+            "bitlocker_enable": DiskForgeIcons.DANGER_MODE,
+            "bitlocker_disable": DiskForgeIcons.DANGER_MODE,
             "danger_mode": DiskForgeIcons.DANGER_MODE,
             "about": DiskForgeIcons.ABOUT,
             "create_partition": DiskForgeIcons.CREATE_PARTITION,
@@ -277,6 +285,9 @@ class MainWindow(QMainWindow):
         actions["uefi_boot_manager"].triggered.connect(self._on_uefi_boot_manager)
         actions["windows_to_go"].triggered.connect(self._on_windows_to_go)
         actions["reset_windows_password"].triggered.connect(self._on_reset_windows_password)
+        actions["bitlocker_status"].triggered.connect(self._on_bitlocker_status)
+        actions["bitlocker_enable"].triggered.connect(self._on_bitlocker_enable)
+        actions["bitlocker_disable"].triggered.connect(self._on_bitlocker_disable)
         actions["danger_mode"].triggered.connect(self._toggle_danger_mode)
         actions["about"].triggered.connect(self._show_about)
         actions["create_partition"].triggered.connect(self._on_create_partition)
@@ -360,6 +371,17 @@ class MainWindow(QMainWindow):
                 RibbonGroup(
                     "Safety",
                     columns=[[RibbonButton(self._actions["danger_mode"], size="small")]],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "BitLocker",
+                    columns=[
+                        [RibbonButton(self._actions["bitlocker_status"])],
+                        [
+                            RibbonButton(self._actions["bitlocker_enable"], size="small"),
+                            RibbonButton(self._actions["bitlocker_disable"], size="small"),
+                        ],
+                    ],
                 ),
             ],
         )
@@ -722,6 +744,37 @@ class MainWindow(QMainWindow):
         details_layout.addWidget(self._details_label)
         right_layout.addWidget(details_group)
 
+        # BitLocker panel
+        bitlocker_group = QGroupBox("BitLocker")
+        bitlocker_layout = QVBoxLayout(bitlocker_group)
+
+        self._bitlocker_volume_label = QLabel("Volume: (none)")
+        self._bitlocker_volume_label.setObjectName("bitlockerVolumeLabel")
+        bitlocker_layout.addWidget(self._bitlocker_volume_label)
+
+        self._bitlocker_status_label = QLabel("BitLocker status is unavailable.")
+        self._bitlocker_status_label.setWordWrap(True)
+        self._bitlocker_status_label.setObjectName("bitlockerStatusLabel")
+        bitlocker_layout.addWidget(self._bitlocker_status_label)
+
+        bitlocker_button_row = QHBoxLayout()
+        self._bitlocker_refresh_button = QPushButton("Refresh Status")
+        self._bitlocker_refresh_button.clicked.connect(self._on_bitlocker_status)
+        bitlocker_button_row.addWidget(self._bitlocker_refresh_button)
+
+        self._bitlocker_enable_button = QPushButton("Enable")
+        self._bitlocker_enable_button.clicked.connect(self._on_bitlocker_enable)
+        bitlocker_button_row.addWidget(self._bitlocker_enable_button)
+
+        self._bitlocker_disable_button = QPushButton("Disable")
+        self._bitlocker_disable_button.clicked.connect(self._on_bitlocker_disable)
+        bitlocker_button_row.addWidget(self._bitlocker_disable_button)
+
+        bitlocker_button_row.addStretch()
+        bitlocker_layout.addLayout(bitlocker_button_row)
+
+        right_layout.addWidget(bitlocker_group)
+
         # Pending operations panel
         pending_group = QGroupBox("Pending Operations")
         pending_layout = QVBoxLayout(pending_group)
@@ -853,6 +906,28 @@ class MainWindow(QMainWindow):
             self._admin_label.setText("Admin: No")
             self._admin_label.setStyleSheet("color: red;")
 
+    def _bitlocker_supported(self) -> bool:
+        return self._session.platform.name == "windows"
+
+    def _update_bitlocker_availability(self) -> None:
+        supported = self._bitlocker_supported()
+        for action_key in ("bitlocker_status", "bitlocker_enable", "bitlocker_disable"):
+            self._actions[action_key].setEnabled(supported)
+
+        for button in (
+            self._bitlocker_refresh_button,
+            self._bitlocker_enable_button,
+            self._bitlocker_disable_button,
+        ):
+            button.setEnabled(supported)
+
+        if supported:
+            self._bitlocker_volume_label.setText("Volume: (none)")
+            self._bitlocker_status_label.setText("Select a mounted volume to view BitLocker status.")
+        else:
+            self._bitlocker_volume_label.setText("Volume: (unsupported)")
+            self._bitlocker_status_label.setText("BitLocker is only available on Windows.")
+
     def _update_danger_mode_indicator(self) -> None:
         """Update danger mode indicator."""
         mode = self._session.danger_mode
@@ -920,6 +995,8 @@ class MainWindow(QMainWindow):
 <tr><td>System Disk:</td><td>{"Yes" if disk.is_system_disk else "No"}</td></tr>
 </table>"""
         self._details_label.setText(text)
+        self._selected_partition = None
+        self._refresh_bitlocker_panel()
 
     def _show_partition_details(self, partition: Partition) -> None:
         """Show partition details in the details panel."""
@@ -935,6 +1012,8 @@ class MainWindow(QMainWindow):
 <tr><td>Flags:</td><td>{flags}</td></tr>
 </table>"""
         self._details_label.setText(text)
+        self._selected_partition = partition
+        self._refresh_bitlocker_panel(partition.mountpoint)
 
     def _set_disk_map(self, disk: Disk | None) -> None:
         """Update the disk map widget and its header."""
@@ -953,6 +1032,129 @@ class MainWindow(QMainWindow):
     def _on_partition_selected(self, partition: Partition) -> None:
         """Handle partition selection from graphics view."""
         self._show_partition_details(partition)
+
+    def _current_bitlocker_mount_point(self) -> str | None:
+        if self._selected_partition and self._selected_partition.mountpoint:
+            return self._selected_partition.mountpoint
+        return None
+
+    def _prompt_for_bitlocker_mount_point(self) -> str | None:
+        mount_point, ok = QInputDialog.getText(
+            self,
+            "BitLocker Volume",
+            "Enter volume mount point (e.g., C:)",
+            text="C:",
+        )
+        if ok and mount_point.strip():
+            return mount_point.strip()
+        return None
+
+    def _resolve_bitlocker_mount_point(self, prompt: bool = False) -> str | None:
+        mount_point = self._current_bitlocker_mount_point()
+        if mount_point:
+            return mount_point
+        if prompt:
+            return self._prompt_for_bitlocker_mount_point()
+        return None
+
+    def _refresh_bitlocker_panel(self, mount_point: str | None = None) -> None:
+        if not self._bitlocker_supported():
+            return
+
+        target_mount = mount_point or self._current_bitlocker_mount_point()
+        if not target_mount:
+            self._bitlocker_volume_label.setText("Volume: (none)")
+            self._bitlocker_status_label.setText("Select a mounted volume to view BitLocker status.")
+            return
+
+        try:
+            status = self._session.platform.get_bitlocker_status(target_mount)
+        except Exception as exc:
+            self._bitlocker_volume_label.setText(f"Volume: {target_mount}")
+            self._bitlocker_status_label.setText(f"BitLocker status unavailable: {exc}")
+            return
+
+        self._bitlocker_volume_label.setText(f"Volume: {status.mount_point}")
+
+        if not status.success:
+            self._bitlocker_status_label.setText(f"BitLocker status unavailable: {status.message}")
+            return
+
+        encryption = (
+            f"{status.encryption_percentage:.0f}%"
+            if status.encryption_percentage is not None
+            else "Unknown"
+        )
+        lock_status = status.lock_status or "Unknown"
+        auto_unlock = (
+            "Enabled"
+            if status.auto_unlock_enabled is True
+            else "Disabled"
+            if status.auto_unlock_enabled is False
+            else "Unknown"
+        )
+        protectors = ", ".join(status.key_protectors) if status.key_protectors else "None"
+        self._bitlocker_status_label.setText(
+            "Volume Status: "
+            f"{status.volume_status}\n"
+            "Protection: "
+            f"{status.protection_status}\n"
+            f"Encryption: {encryption}\n"
+            f"Lock: {lock_status}\n"
+            f"Auto-unlock: {auto_unlock}\n"
+            f"Protectors: {protectors}"
+        )
+
+    def _on_bitlocker_status(self) -> None:
+        if not self._bitlocker_supported():
+            QMessageBox.information(self, "BitLocker", "BitLocker is only available on Windows.")
+            return
+        mount_point = self._resolve_bitlocker_mount_point(prompt=True)
+        if not mount_point:
+            return
+        self._refresh_bitlocker_panel(mount_point)
+
+    def _on_bitlocker_enable(self) -> None:
+        if not self._bitlocker_supported():
+            QMessageBox.information(self, "BitLocker", "BitLocker is only available on Windows.")
+            return
+        mount_point = self._resolve_bitlocker_mount_point(prompt=True)
+        if not mount_point:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Enable BitLocker",
+            f"Enable BitLocker on {mount_point}?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        success, message = self._session.platform.enable_bitlocker(mount_point)
+        if success:
+            QMessageBox.information(self, "BitLocker", message)
+        else:
+            QMessageBox.warning(self, "BitLocker", message)
+        self._refresh_bitlocker_panel(mount_point)
+
+    def _on_bitlocker_disable(self) -> None:
+        if not self._bitlocker_supported():
+            QMessageBox.information(self, "BitLocker", "BitLocker is only available on Windows.")
+            return
+        mount_point = self._resolve_bitlocker_mount_point(prompt=True)
+        if not mount_point:
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Disable BitLocker",
+            f"Disable BitLocker on {mount_point}?",
+        )
+        if confirm != QMessageBox.StandardButton.Yes:
+            return
+        success, message = self._session.platform.disable_bitlocker(mount_point)
+        if success:
+            QMessageBox.information(self, "BitLocker", message)
+        else:
+            QMessageBox.warning(self, "BitLocker", message)
+        self._refresh_bitlocker_panel(mount_point)
 
     def _show_context_menu(self, pos: Any) -> None:
         """Show context menu for disk/partition."""
@@ -1094,6 +1296,26 @@ class MainWindow(QMainWindow):
                 "Defragment...",
             )
             defrag_action.triggered.connect(lambda: self._defrag_partition(item))
+
+            if self._bitlocker_supported():
+                menu.addSeparator()
+                status_action = menu.addAction(
+                    self._actions["bitlocker_status"].icon(),
+                    "BitLocker Status",
+                )
+                status_action.triggered.connect(self._on_bitlocker_status)
+
+                enable_action = menu.addAction(
+                    self._actions["bitlocker_enable"].icon(),
+                    "Enable BitLocker...",
+                )
+                enable_action.triggered.connect(self._on_bitlocker_enable)
+
+                disable_action = menu.addAction(
+                    self._actions["bitlocker_disable"].icon(),
+                    "Disable BitLocker...",
+                )
+                disable_action.triggered.connect(self._on_bitlocker_disable)
 
             delete_action = menu.addAction(
                 self._actions["delete_partition"].icon(),

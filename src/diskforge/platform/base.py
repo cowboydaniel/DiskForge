@@ -70,6 +70,7 @@ if TYPE_CHECKING:
         BadSectorScanResult,
         SurfaceTestResult,
         DiskSpeedTestResult,
+        BitLockerStatus,
     )
     from diskforge.core.job import JobContext
 
@@ -646,6 +647,20 @@ class PlatformBackend(ABC):
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         """Reset a Windows local account password."""
+
+    # ==================== BitLocker Operations ====================
+
+    @abstractmethod
+    def get_bitlocker_status(self, mount_point: str) -> BitLockerStatus:
+        """Get BitLocker status for a volume."""
+
+    @abstractmethod
+    def enable_bitlocker(self, mount_point: str) -> tuple[bool, str]:
+        """Enable BitLocker on a volume."""
+
+    @abstractmethod
+    def disable_bitlocker(self, mount_point: str) -> tuple[bool, str]:
+        """Disable BitLocker on a volume."""
 
     # ==================== Mount Operations ====================
 

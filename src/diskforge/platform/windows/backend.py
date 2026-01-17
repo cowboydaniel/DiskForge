@@ -39,6 +39,7 @@ from diskforge.core.models import (
     BadSectorScanResult,
     SurfaceTestResult,
     DiskSpeedTestResult,
+    BitLockerStatus,
 )
 from diskforge.platform.base import CommandResult, PlatformBackend
 from diskforge.platform.file_ops import (
@@ -2065,6 +2066,83 @@ class WindowsBackend(PlatformBackend):
         if result.success:
             return True, f"Password reset for {options.username}"
         return False, f"Password reset failed: {result.stderr}"
+
+    # ==================== BitLocker Operations ====================
+
+    def get_bitlocker_status(self, mount_point: str) -> BitLockerStatus:
+        script = (
+            "Get-BitLockerVolume -MountPoint "
+            f"'{mount_point}' | "
+            "Select-Object MountPoint, VolumeStatus, ProtectionStatus, EncryptionPercentage, "
+            "LockStatus, AutoUnlockEnabled, "
+            "@{Name='KeyProtectorTypes';Expression={$_.KeyProtector | ForEach-Object {$_.KeyProtectorType}}} | "
+            "ConvertTo-Json -Depth 3"
+        )
+        result = self._run_powershell(script)
+        if not result.success:
+            return BitLockerStatus(
+                mount_point=mount_point,
+                volume_status="Unknown",
+                protection_status="Unknown",
+                encryption_percentage=None,
+                lock_status=None,
+                auto_unlock_enabled=None,
+                key_protectors=[],
+                success=False,
+                message=result.stderr or result.stdout or "Failed to query BitLocker status.",
+            )
+
+        records = parse_powershell_json(result.stdout)
+        if not records:
+            return BitLockerStatus(
+                mount_point=mount_point,
+                volume_status="Unknown",
+                protection_status="Unknown",
+                encryption_percentage=None,
+                lock_status=None,
+                auto_unlock_enabled=None,
+                key_protectors=[],
+                success=False,
+                message="No BitLocker status returned.",
+            )
+
+        record = records[0]
+        raw_encryption = record.get("EncryptionPercentage")
+        try:
+            encryption_percentage = float(raw_encryption) if raw_encryption is not None else None
+        except (TypeError, ValueError):
+            encryption_percentage = None
+
+        key_types = record.get("KeyProtectorTypes") or []
+        if isinstance(key_types, str):
+            key_types = [key_types]
+
+        return BitLockerStatus(
+            mount_point=record.get("MountPoint") or mount_point,
+            volume_status=str(record.get("VolumeStatus") or "Unknown"),
+            protection_status=str(record.get("ProtectionStatus") or "Unknown"),
+            encryption_percentage=encryption_percentage,
+            lock_status=record.get("LockStatus"),
+            auto_unlock_enabled=record.get("AutoUnlockEnabled"),
+            key_protectors=[str(item) for item in key_types],
+        )
+
+    def enable_bitlocker(self, mount_point: str) -> tuple[bool, str]:
+        script = (
+            f"Enable-BitLocker -MountPoint '{mount_point}' "
+            "-UsedSpaceOnly -SkipHardwareTest -RecoveryPasswordProtector -ErrorAction Stop"
+        )
+        result = self._run_powershell(script, timeout=600)
+        if result.success:
+            return True, f"BitLocker enable initiated for {mount_point}."
+        return False, f"BitLocker enable failed: {result.stderr or result.stdout}"
+
+    def disable_bitlocker(self, mount_point: str) -> tuple[bool, str]:
+        script = f"Disable-BitLocker -MountPoint '{mount_point}' -ErrorAction Stop"
+        result = self._run_powershell(script, timeout=600)
+        if result.success:
+            return True, f"BitLocker disable initiated for {mount_point}."
+        return False, f"BitLocker disable failed: {result.stderr or result.stdout}"
 
     def _generate_rescue_batch(self) -> str:
         """Generate main rescue batch script."""
