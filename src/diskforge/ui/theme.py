@@ -108,35 +108,42 @@ class AomeiTheme:
             spacing: {self.spacing.toolbar_spacing_px}px;
         }}
         #ribbon {{
-            background-color: {self.colors.surface_muted};
-            border-bottom: 1px solid {self.colors.border};
+            background-color: {self.colors.brand_primary};
+            border-bottom: 1px solid {self.colors.brand_primary_dark};
         }}
         #ribbonTabs::pane {{
             border: none;
         }}
+        #ribbonTabs QTabBar {{
+            background-color: {self.colors.brand_primary};
+        }}
         #ribbonTabs QTabBar::tab {{
-            background-color: {self.colors.surface_muted};
-            color: {self.colors.text_primary};
-            padding: 6px 16px;
-            border: 1px solid {self.colors.border};
+            background-color: {self.colors.brand_primary};
+            color: {self.colors.text_inverted};
+            padding: 4px 12px;
+            border: 1px solid {self.colors.brand_primary};
             border-bottom: none;
-            margin-right: 6px;
-            border-top-left-radius: {self.radii.button_px}px;
-            border-top-right-radius: {self.radii.button_px}px;
+            margin-right: 4px;
+            border-top-left-radius: {self.radii.button_px - 2}px;
+            border-top-right-radius: {self.radii.button_px - 2}px;
         }}
         #ribbonTabs QTabBar::tab:hover:!selected {{
-            background-color: {self.colors.brand_primary_soft};
-            color: {self.colors.brand_primary_dark};
+            background-color: {self.colors.brand_primary_dark};
+            color: {self.colors.text_inverted};
+        }}
+        #ribbonTabs QTabBar::tab:pressed:!selected {{
+            background-color: {self.colors.brand_primary_dark};
+            color: {self.colors.text_inverted};
         }}
         #ribbonTabs QTabBar::tab:disabled {{
-            background-color: {self.colors.surface_muted};
+            background-color: {self.colors.brand_primary};
             color: {self.colors.text_muted};
         }}
         #ribbonTabs QTabBar::tab:selected {{
             background-color: {self.colors.surface};
-            color: {self.colors.brand_primary_dark};
+            color: {self.colors.brand_primary};
             font-weight: {self.typography.section_weight};
-            border-color: {self.colors.brand_primary};
+            border-color: {self.colors.brand_primary_dark};
         }}
         #ribbon QToolButton {{
             background-color: {self.colors.surface};
