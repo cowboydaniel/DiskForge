@@ -43,6 +43,7 @@ from diskforge.core.models import (
     QuickPartitionOptions,
     PartitionAttributeOptions,
     InitializeDiskOptions,
+    DynamicVolumeResizeMoveOptions,
     Partition,
     PartitionRole,
     PartitionCreateOptions,
@@ -736,6 +737,68 @@ class ResizeMovePartitionWizard(DiskForgeWizard):
         return OperationResult(success=success, message=message)
 
 
+class ResizeMoveDynamicVolumeWizard(DiskForgeWizard):
+    def __init__(self, session: Session, volume_id: str | None, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Resize/Move Dynamic Volume")
+        self._session = session
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        size_page = QWizardPage()
+        size_page.setTitle("Resize/Move Settings")
+        size_layout = QFormLayout(size_page)
+        self._volume_input = QLineEdit(volume_id or "")
+        self._volume_input.setPlaceholderText("e.g., F: or \\\\?\\Volume{GUID}")
+        self._size_input = QLineEdit("1024")
+        self._size_input.textChanged.connect(size_page.completeChanged)
+        self._start_input = QLineEdit()
+        self._start_input.setPlaceholderText("Leave blank to keep current")
+        size_layout.addRow("Dynamic volume identifier:", self._volume_input)
+        size_layout.addRow("New size (MiB):", self._size_input)
+        size_layout.addRow("New start sector:", self._start_input)
+
+        def is_complete() -> bool:
+            return bool(self._volume_input.text().strip()) and _parse_size_mib(self._size_input.text()) is not None
+
+        size_page.isComplete = is_complete  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Resize/Move",
+            "This will modify the selected dynamic volume.",
+            session.safety.generate_confirmation_string(self._volume_input.text().strip()),
+        )
+        self._volume_input.textChanged.connect(
+            lambda: confirm_page.set_confirmation(
+                session.safety.generate_confirmation_string(self._volume_input.text().strip())
+            )
+        )
+
+        result_page = OperationResultPage(
+            "Resize/Move Dynamic Volume",
+            self._resize_move_volume,
+            status_callback,
+            "Resizing dynamic volume...",
+        )
+
+        self.addPage(size_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _resize_move_volume(self) -> OperationResult:
+        volume_id = self._volume_input.text().strip()
+        size_bytes = _parse_size_mib(self._size_input.text()) or 0
+        start_text = self._start_input.text().strip()
+        start_sector = int(start_text) if start_text else None
+        options = DynamicVolumeResizeMoveOptions(
+            volume_id=volume_id,
+            new_size_bytes=size_bytes,
+            new_start_sector=start_sector,
+        )
+        success, message = self._session.platform.resize_move_dynamic_volume(options)
+        return OperationResult(success=success, message=message)
+
+
 class MergePartitionsWizard(DiskForgeWizard):
     def __init__(self, session: Session, partitions: Iterable[Partition], status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
         super().__init__(parent)
@@ -932,6 +995,104 @@ class ShrinkPartitionWizard(DiskForgeWizard):
             self._partition.device_path,
             size_bytes,
         )
+        return OperationResult(success=success, message=message)
+
+
+class ExtendDynamicVolumeWizard(DiskForgeWizard):
+    def __init__(self, session: Session, volume_id: str | None, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Extend Dynamic Volume")
+        self._session = session
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        extend_page = QWizardPage()
+        extend_page.setTitle("Extend Settings")
+        extend_layout = QFormLayout(extend_page)
+        self._volume_input = QLineEdit(volume_id or "")
+        self._volume_input.setPlaceholderText("e.g., F: or \\\\?\\Volume{GUID}")
+        self._size_input = QLineEdit("1024")
+        self._size_input.textChanged.connect(extend_page.completeChanged)
+        extend_layout.addRow("Dynamic volume identifier:", self._volume_input)
+        extend_layout.addRow("New size (MiB):", self._size_input)
+
+        extend_page.isComplete = lambda: bool(self._volume_input.text().strip()) and _parse_size_mib(self._size_input.text()) is not None  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Extend",
+            "This will extend the selected dynamic volume.",
+            session.safety.generate_confirmation_string(self._volume_input.text().strip()),
+        )
+        self._volume_input.textChanged.connect(
+            lambda: confirm_page.set_confirmation(
+                session.safety.generate_confirmation_string(self._volume_input.text().strip())
+            )
+        )
+
+        result_page = OperationResultPage(
+            "Extend Dynamic Volume",
+            self._extend_volume,
+            status_callback,
+            "Extending dynamic volume...",
+        )
+
+        self.addPage(extend_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _extend_volume(self) -> OperationResult:
+        volume_id = self._volume_input.text().strip()
+        size_bytes = _parse_size_mib(self._size_input.text()) or 0
+        success, message = self._session.platform.extend_dynamic_volume(volume_id, size_bytes)
+        return OperationResult(success=success, message=message)
+
+
+class ShrinkDynamicVolumeWizard(DiskForgeWizard):
+    def __init__(self, session: Session, volume_id: str | None, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Shrink Dynamic Volume")
+        self._session = session
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        shrink_page = QWizardPage()
+        shrink_page.setTitle("Shrink Settings")
+        shrink_layout = QFormLayout(shrink_page)
+        self._volume_input = QLineEdit(volume_id or "")
+        self._volume_input.setPlaceholderText("e.g., F: or \\\\?\\Volume{GUID}")
+        self._size_input = QLineEdit("1024")
+        self._size_input.textChanged.connect(shrink_page.completeChanged)
+        shrink_layout.addRow("Dynamic volume identifier:", self._volume_input)
+        shrink_layout.addRow("New size (MiB):", self._size_input)
+
+        shrink_page.isComplete = lambda: bool(self._volume_input.text().strip()) and _parse_size_mib(self._size_input.text()) is not None  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Shrink",
+            "This will shrink the selected dynamic volume.",
+            session.safety.generate_confirmation_string(self._volume_input.text().strip()),
+        )
+        self._volume_input.textChanged.connect(
+            lambda: confirm_page.set_confirmation(
+                session.safety.generate_confirmation_string(self._volume_input.text().strip())
+            )
+        )
+
+        result_page = OperationResultPage(
+            "Shrink Dynamic Volume",
+            self._shrink_volume,
+            status_callback,
+            "Shrinking dynamic volume...",
+        )
+
+        self.addPage(shrink_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _shrink_volume(self) -> OperationResult:
+        volume_id = self._volume_input.text().strip()
+        size_bytes = _parse_size_mib(self._size_input.text()) or 0
+        success, message = self._session.platform.shrink_dynamic_volume(volume_id, size_bytes)
         return OperationResult(success=success, message=message)
 
 

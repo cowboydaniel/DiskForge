@@ -58,6 +58,7 @@ if TYPE_CHECKING:
         InitializeDiskOptions,
         PartitionCreateOptions,
         PartitionRecoveryOptions,
+        DynamicVolumeResizeMoveOptions,
         ResizeMoveOptions,
         SplitPartitionOptions,
         WipeOptions,
@@ -494,6 +495,31 @@ class WindowsBackend(PlatformBackend):
             dry_run=dry_run,
         )
 
+    def resize_move_dynamic_volume(
+        self,
+        options: DynamicVolumeResizeMoveOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Resize or move a dynamic volume."""
+        if options.new_start_sector is not None:
+            return False, "Dynamic volume moves are not supported in the Windows backend yet"
+
+        if options.new_size_bytes is None:
+            return False, "New size is required for dynamic volume resize operations"
+
+        if context:
+            context.update_progress(
+                message=f"Resizing dynamic volume {options.volume_id} to {options.new_size_bytes} bytes"
+            )
+
+        if dry_run:
+            return True, (
+                f"Would resize dynamic volume {options.volume_id} to {options.new_size_bytes} bytes"
+            )
+
+        return False, "Dynamic volume resize/move is not supported in the Windows backend yet"
+
     def merge_partitions(
         self,
         options: MergePartitionsOptions,
@@ -552,6 +578,24 @@ class WindowsBackend(PlatformBackend):
             dry_run=dry_run,
         )
 
+    def extend_dynamic_volume(
+        self,
+        volume_id: str,
+        new_size_bytes: int,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Extend a dynamic volume."""
+        if context:
+            context.update_progress(
+                message=f"Extending dynamic volume {volume_id} to {new_size_bytes} bytes"
+            )
+
+        if dry_run:
+            return True, f"Would extend dynamic volume {volume_id} to {new_size_bytes} bytes"
+
+        return False, "Dynamic volume extension is not supported in the Windows backend yet"
+
     def shrink_partition(
         self,
         partition_path: str,
@@ -566,6 +610,24 @@ class WindowsBackend(PlatformBackend):
             context=context,
             dry_run=dry_run,
         )
+
+    def shrink_dynamic_volume(
+        self,
+        volume_id: str,
+        new_size_bytes: int,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Shrink a dynamic volume."""
+        if context:
+            context.update_progress(
+                message=f"Shrinking dynamic volume {volume_id} to {new_size_bytes} bytes"
+            )
+
+        if dry_run:
+            return True, f"Would shrink dynamic volume {volume_id} to {new_size_bytes} bytes"
+
+        return False, "Dynamic volume shrink is not supported in the Windows backend yet"
 
     def allocate_free_space(
         self,

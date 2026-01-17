@@ -88,6 +88,16 @@ class OperationsTreeWidget(QTreeView):
         )
 
         self._add_category(
+            "Dynamic Volume Operations",
+            partition_icon,
+            [
+                ("Resize/Move Dynamic Volume", "resize_move_dynamic_volume", self._icon("transform-move", QStyle.SP_ArrowUp)),
+                ("Extend Dynamic Volume", "extend_dynamic_volume", self._icon("zoom-in", QStyle.SP_ArrowUp)),
+                ("Shrink Dynamic Volume", "shrink_dynamic_volume", self._icon("zoom-out", QStyle.SP_ArrowDown)),
+            ],
+        )
+
+        self._add_category(
             "Backup & Restore",
             backup_icon,
             [
