@@ -295,17 +295,17 @@ class AomeiTheme:
             font-style: italic;
         }}
         QGroupBox {{
-            border: 1px solid {self.colors.border};
+            border: 1px solid {self.colors.border_soft};
             border-radius: {self.radii.group_box_px}px;
-            margin-top: 12px;
-            padding-top: 8px;
+            margin-top: 6px;
+            padding-top: 6px;
             background-color: {self.colors.surface};
         }}
         QGroupBox::title {{
             subcontrol-origin: margin;
-            left: 12px;
-            padding: 0 6px;
-            color: {self.colors.text_primary};
+            left: 10px;
+            padding: 0 4px;
+            color: {self.colors.text_muted};
             font-weight: {self.typography.section_weight};
         }}
         QFrame[frameShape="4"],
@@ -389,6 +389,33 @@ class AomeiTheme:
             background-color: {self.colors.border};
             border-color: {self.colors.border};
             color: {self.colors.text_muted};
+        }}
+        QPushButton#selectionPropertiesButton {{
+            background-color: {self.colors.brand_primary};
+            border-color: {self.colors.brand_primary};
+            color: {self.colors.text_inverted};
+            font-weight: {self.typography.section_weight};
+            padding: 6px 14px;
+        }}
+        QPushButton#selectionPropertiesButton:hover {{
+            background-color: {self.colors.brand_primary_dark};
+            border-color: {self.colors.brand_primary_dark};
+        }}
+        QPushButton#selectionPropertiesButton:pressed {{
+            background-color: {self.colors.brand_primary_dark};
+            border-color: {self.colors.brand_primary_dark};
+        }}
+        QListWidget#actionsList {{
+            border: 1px solid {self.colors.border_soft};
+            background-color: {self.colors.surface};
+            padding: 4px;
+        }}
+        QListWidget#actionsList::item {{
+            padding: 4px 6px;
+        }}
+        QListWidget#actionsList::item:hover {{
+            background-color: {self.colors.brand_primary_soft};
+            color: {self.colors.brand_primary_dark};
         }}
         QScrollBar:vertical {{
             background-color: {self.colors.surface_muted};
