@@ -1107,6 +1107,64 @@ Alignment: 4K""", title="Align 4K Plan"))
         sys.exit(1)
 
 
+@cli.command("defrag-disk")
+@click.argument("disk")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def defrag_disk(ctx: click.Context, disk: str, dry_run: bool) -> None:
+    """Defragment a disk's partitions."""
+    session = get_session(ctx)
+
+    if dry_run:
+        console.print(
+            Panel(
+                f"""[yellow]DRY RUN[/yellow]
+
+Disk: {disk}""",
+                title="Defragment Disk Plan",
+            )
+        )
+        return
+
+    with console.status("Defragmenting disk..."):
+        success, message = session.platform.defrag_disk(disk)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("defrag-partition")
+@click.argument("partition")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def defrag_partition(ctx: click.Context, partition: str, dry_run: bool) -> None:
+    """Defragment a partition."""
+    session = get_session(ctx)
+
+    if dry_run:
+        console.print(
+            Panel(
+                f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}""",
+                title="Defragment Partition Plan",
+            )
+        )
+        return
+
+    with console.status("Defragmenting partition..."):
+        success, message = session.platform.defrag_partition(partition)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
 @cli.command("wipe-device")
 @click.argument("target")
 @click.option(

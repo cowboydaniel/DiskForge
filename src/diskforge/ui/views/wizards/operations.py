@@ -1327,6 +1327,68 @@ class PartitionRecoveryWizard(DiskForgeWizard):
         return OperationResult(success=success, message=message)
 
 
+class DefragDiskWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Defragment Disk")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        info_page = QWizardPage()
+        info_page.setTitle("Disk Defragmentation")
+        info_layout = QVBoxLayout(info_page)
+        info_layout.addWidget(QLabel(f"Defragment all supported partitions on {disk.device_path}."))
+        info_layout.addWidget(QLabel(f"Partitions detected: {len(disk.partitions)}"))
+
+        result_page = OperationResultPage(
+            "Defragment Disk",
+            self._defrag_disk,
+            status_callback,
+            f"Defragmenting {disk.device_path}...",
+        )
+
+        self.addPage(info_page)
+        self.addPage(result_page)
+
+    def _defrag_disk(self) -> OperationResult:
+        success, message = self._session.platform.defrag_disk(self._disk.device_path)
+        return OperationResult(success=success, message=message)
+
+
+class DefragPartitionWizard(DiskForgeWizard):
+    def __init__(self, session: Session, partition: Partition, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Defragment Partition")
+        self._session = session
+        self._partition = partition
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        info_page = QWizardPage()
+        info_page.setTitle("Partition Defragmentation")
+        info_layout = QVBoxLayout(info_page)
+        mountpoint = partition.mountpoint or "(not mounted)"
+        info_layout.addWidget(QLabel(f"Defragment {partition.device_path}."))
+        info_layout.addWidget(QLabel(f"Filesystem: {partition.filesystem.value}"))
+        info_layout.addWidget(QLabel(f"Mount point: {mountpoint}"))
+
+        result_page = OperationResultPage(
+            "Defragment Partition",
+            self._defrag_partition,
+            status_callback,
+            f"Defragmenting {partition.device_path}...",
+        )
+
+        self.addPage(info_page)
+        self.addPage(result_page)
+
+    def _defrag_partition(self) -> OperationResult:
+        success, message = self._session.platform.defrag_partition(self._partition.device_path)
+        return OperationResult(success=success, message=message)
+
+
 class Align4KWizard(DiskForgeWizard):
     def __init__(self, session: Session, partition: Partition, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
         super().__init__(parent)
