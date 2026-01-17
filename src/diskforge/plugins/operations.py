@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 from diskforge.core.job import Job, JobContext
 from diskforge.core.models import (
+    BackupType,
     CloneMode,
     CompressionLevel,
     BadSectorScanOptions,
@@ -416,6 +417,8 @@ class CreateImageJob(Job[ImageInfo]):
         compression_level: CompressionLevel | None = None,
         mode: CloneMode = CloneMode.INTELLIGENT,
         schedule: str | None = None,
+        backup_type: BackupType | None = None,
+        extra_metadata: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(
             name="create_image",
@@ -428,6 +431,8 @@ class CreateImageJob(Job[ImageInfo]):
         self.compression_level = compression_level
         self.mode = mode
         self.schedule = schedule
+        self.backup_type = backup_type
+        self.extra_metadata = extra_metadata
         self._session: Session | None = None
 
     def set_session(self, session: Session) -> None:
@@ -453,6 +458,8 @@ class CreateImageJob(Job[ImageInfo]):
             verify=self.verify,
             mode=self.mode,
             schedule=self.schedule,
+            backup_type=self.backup_type,
+            extra_metadata=self.extra_metadata,
         )
 
         if not success or image_info is None:

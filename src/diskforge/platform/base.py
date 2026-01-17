@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from diskforge.core.models import (
+        BackupType,
         CloneMode,
         CompressionLevel,
         Disk,
@@ -71,7 +72,9 @@ if TYPE_CHECKING:
         SurfaceTestResult,
         DiskSpeedTestResult,
         BitLockerStatus,
+        SystemBackupInfo,
     )
+    from diskforge.core.config import SystemBackupConfig
     from diskforge.core.job import JobContext
 
 
@@ -552,11 +555,30 @@ class PlatformBackend(ABC):
         verify: bool = True,
         mode: CloneMode = CloneMode.INTELLIGENT,
         schedule: str | None = None,
+        backup_type: BackupType | None = None,
+        extra_metadata: dict[str, Any] | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str, ImageInfo | None]:
         """
         Create a disk/partition image.
         Returns (success, message/error, image_info).
+        """
+
+    @abstractmethod
+    def create_system_backup(
+        self,
+        output_path: Path,
+        context: JobContext | None = None,
+        profile: SystemBackupConfig | None = None,
+        compression: str | None = "zstd",
+        compression_level: CompressionLevel | None = None,
+        verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, SystemBackupInfo | None]:
+        """
+        Create a system backup bundle.
+        Returns (success, message/error, system_backup_info).
         """
 
     @abstractmethod

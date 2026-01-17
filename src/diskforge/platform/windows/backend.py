@@ -13,16 +13,20 @@ import ctypes
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from diskforge.core.config import SystemBackupConfig
 from diskforge.core.logging import get_logger
 from diskforge.core.models import (
+    BackupType,
     CloneMode,
     CompressionLevel,
     Disk,
@@ -31,7 +35,9 @@ from diskforge.core.models import (
     FileSystem,
     ImageInfo,
     Partition,
+    PartitionFlag,
     PartitionStyle,
+    SystemBackupInfo,
     BadSectorScanOptions,
     SurfaceTestOptions,
     DiskSpeedTestOptions,
@@ -1470,6 +1476,8 @@ class WindowsBackend(PlatformBackend):
         verify: bool = True,
         mode: CloneMode = CloneMode.INTELLIGENT,
         schedule: str | None = None,
+        backup_type: BackupType | None = None,
+        extra_metadata: dict[str, Any] | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str, ImageInfo | None]:
         """Create a disk/partition image."""
@@ -1584,21 +1592,29 @@ class WindowsBackend(PlatformBackend):
                                     rate_bytes_per_sec=rate,
                                 )
 
+            metadata = {
+                "clone_mode": mode.value,
+                "schedule": schedule,
+                "compression_level": compression_level.value if compression_level else None,
+            }
+            if extra_metadata:
+                metadata.update(extra_metadata)
+
+            backup_type_value = backup_type or BackupType.DISK_IMAGE
+            metadata.setdefault("backup_type", backup_type_value.value)
+
             # Create image info
             image_info = ImageInfo(
                 path=str(final_path),
                 source_device=source_path,
                 source_size_bytes=source_size,
                 image_size_bytes=final_path.stat().st_size,
+                backup_type=backup_type_value,
                 compression=compression if compress_func else None,
                 created_at=start_time,
                 checksum=hasher.hexdigest() if hasher else None,
                 checksum_algorithm="sha256",
-                metadata={
-                    "clone_mode": mode.value,
-                    "schedule": schedule,
-                    "compression_level": compression_level.value if compression_level else None,
-                },
+                metadata=metadata,
             )
 
             # Write metadata
@@ -1612,6 +1628,197 @@ class WindowsBackend(PlatformBackend):
             return False, "Permission denied. Run as Administrator.", None
         except Exception as e:
             return False, f"Failed to create image: {e}", None
+
+    def _normalize_mountpoint(self, mountpoint: str | None) -> str | None:
+        if not mountpoint:
+            return None
+        if mountpoint.endswith("\\"):
+            return mountpoint.rstrip("\\")
+        return mountpoint.rstrip("/")
+
+    def _safe_filename(self, value: str) -> str:
+        sanitized = re.sub(r"[^A-Za-z0-9]+", "_", value).strip("_")
+        return sanitized or "partition"
+
+    def _select_system_backup_partitions(
+        self,
+        disk: Disk,
+        profile: SystemBackupConfig,
+    ) -> list[Partition]:
+        required_mounts = {self._normalize_mountpoint(mp) for mp in profile.required_mountpoints}
+        required_mounts.discard(None)
+        selected: list[Partition] = []
+
+        for partition in disk.partitions:
+            normalized_mount = self._normalize_mountpoint(partition.mountpoint)
+            is_required = False
+
+            if normalized_mount and normalized_mount in required_mounts:
+                is_required = True
+            if partition.is_boot or partition.is_system or PartitionFlag.ESP in partition.flags:
+                is_required = True
+            if PartitionFlag.MSFTRES in partition.flags and profile.include_reserved_partitions:
+                is_required = True
+
+            if partition.filesystem == FileSystem.SWAP and not profile.include_swap_partitions and not is_required:
+                continue
+            if PartitionFlag.DIAG in partition.flags and not profile.include_recovery_partitions and not is_required:
+                continue
+            if PartitionFlag.HIDDEN in partition.flags and not profile.include_hidden_partitions and not is_required:
+                continue
+
+            if is_required:
+                selected.append(partition)
+
+        if not selected:
+            selected = disk.partitions.copy()
+
+        return selected
+
+    def _build_system_boot_metadata(
+        self,
+        disk: Disk,
+        selected_partitions: list[Partition],
+        profile: SystemBackupConfig,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "disk": {
+                "device_path": disk.device_path,
+                "model": disk.model,
+                "serial": disk.serial,
+                "size_bytes": disk.size_bytes,
+                "sector_size": disk.sector_size,
+                "partition_style": disk.partition_style.name,
+            },
+            "selected_partitions": [partition.device_path for partition in selected_partitions],
+            "boot_partitions": [
+                partition.device_path
+                for partition in disk.partitions
+                if partition.is_boot or partition.is_system or PartitionFlag.ESP in partition.flags
+            ],
+        }
+
+        if profile.capture_partition_table:
+            metadata["partition_table"] = [partition.to_dict() for partition in disk.partitions]
+
+        return metadata
+
+    def create_system_backup(
+        self,
+        output_path: Path,
+        context: JobContext | None = None,
+        profile: SystemBackupConfig | None = None,
+        compression: str | None = "zstd",
+        compression_level: CompressionLevel | None = None,
+        verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, SystemBackupInfo | None]:
+        """Create a system backup bundle."""
+        profile = profile or SystemBackupConfig()
+        inventory = self.get_disk_inventory()
+        system_disks = [disk for disk in inventory.disks if disk.is_system_disk]
+
+        if not system_disks:
+            return False, "No system disk detected for backup", None
+
+        system_disk = system_disks[0]
+        if len(system_disks) > 1 and context:
+            context.add_warning(
+                f"Multiple system disks detected; using {system_disk.device_path}"
+            )
+
+        selected_partitions = self._select_system_backup_partitions(system_disk, profile)
+        if not selected_partitions:
+            return False, "No system partitions found for backup", None
+
+        if context:
+            context.update_progress(message="Preparing system backup", stage="system_backup")
+
+        if dry_run:
+            return True, f"Would create system backup at {output_path}", None
+
+        output_path.mkdir(parents=True, exist_ok=True)
+        backup_id = str(uuid.uuid4())
+        created_at = datetime.now()
+        images: list[ImageInfo] = []
+
+        for index, partition in enumerate(selected_partitions, start=1):
+            if context:
+                context.update_progress(
+                    message=f"Backing up {partition.device_path} ({index}/{len(selected_partitions)})",
+                    stage="system_backup",
+                )
+
+            image_basename = self._safe_filename(partition.device_path)
+            image_path = output_path / f"{image_basename}.img"
+            success, message, image_info = self.create_image(
+                partition.device_path,
+                image_path,
+                context,
+                compression=compression,
+                compression_level=compression_level,
+                verify=verify,
+                mode=mode,
+                backup_type=BackupType.SYSTEM_PARTITION,
+                extra_metadata={
+                    "system_backup_id": backup_id,
+                    "system_disk": system_disk.device_path,
+                    "partition_flags": [flag.name for flag in partition.flags],
+                    "partition_mountpoint": partition.mountpoint,
+                    "partition_filesystem": partition.filesystem.value,
+                },
+            )
+            if not success or image_info is None:
+                return False, message, None
+            images.append(image_info)
+
+        boot_metadata = (
+            self._build_system_boot_metadata(system_disk, selected_partitions, profile)
+            if profile.capture_boot_metadata
+            else {}
+        )
+
+        manifest = {
+            "backup_type": BackupType.SYSTEM.value,
+            "backup_id": backup_id,
+            "created_at": created_at.isoformat(),
+            "source_disk": system_disk.device_path,
+            "source_disk_model": system_disk.model,
+            "source_disk_size_bytes": system_disk.size_bytes,
+            "partition_style": system_disk.partition_style.name,
+            "profile": profile.model_dump(mode="json"),
+            "boot_metadata": boot_metadata,
+            "partitions": [
+                {
+                    "device_path": partition.device_path,
+                    "mountpoint": partition.mountpoint,
+                    "filesystem": partition.filesystem.value,
+                    "flags": [flag.name for flag in partition.flags],
+                    "image_path": os.path.relpath(image.path, output_path),
+                }
+                for partition, image in zip(selected_partitions, images)
+            ],
+        }
+
+        manifest_path = output_path / "system_backup.json"
+        with open(manifest_path, "w") as f:
+            json.dump(manifest, f, indent=2)
+
+        backup_info = SystemBackupInfo(
+            path=str(output_path),
+            source_disk=system_disk.device_path,
+            image_count=len(images),
+            images=images,
+            created_at=created_at,
+            metadata={
+                "backup_id": backup_id,
+                "manifest_path": str(manifest_path),
+                "backup_type": BackupType.SYSTEM.value,
+            },
+        )
+
+        return True, f"System backup created at {output_path}", backup_info
 
     def restore_image(
         self,
@@ -1739,11 +1946,16 @@ class WindowsBackend(PlatformBackend):
             try:
                 with open(meta_path) as f:
                     data = json.load(f)
+                metadata = data.get("metadata", {})
+                backup_type = BackupType.from_string(
+                    data.get("backup_type") or metadata.get("backup_type")
+                )
                 return ImageInfo(
                     path=data.get("path", str(image_path)),
                     source_device=data.get("source_device", ""),
                     source_size_bytes=data.get("source_size_bytes", 0),
                     image_size_bytes=data.get("image_size_bytes", image_path.stat().st_size),
+                    backup_type=backup_type,
                     compression=data.get("compression"),
                     created_at=(
                         datetime.fromisoformat(data["created_at"])
@@ -1752,6 +1964,7 @@ class WindowsBackend(PlatformBackend):
                     ),
                     checksum=data.get("checksum"),
                     checksum_algorithm=data.get("checksum_algorithm", "sha256"),
+                    metadata=metadata,
                 )
             except Exception:
                 pass
@@ -1768,6 +1981,7 @@ class WindowsBackend(PlatformBackend):
             source_device="unknown",
             source_size_bytes=0,
             image_size_bytes=image_path.stat().st_size,
+            backup_type=BackupType.DISK_IMAGE,
             compression=compression,
         )
 

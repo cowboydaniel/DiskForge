@@ -2469,6 +2469,65 @@ Verify: {"No" if no_verify else "Yes"}""", title="Backup Plan"))
         sys.exit(1)
 
 
+@cli.command("system-backup")
+@click.argument("output", type=click.Path(path_type=Path))
+@click.option(
+    "--compression",
+    "-c",
+    type=click.Choice(["none", "gzip", "lz4", "zstd"]),
+    default="zstd",
+    help="Compression algorithm",
+)
+@click.option("--no-verify", is_flag=True, help="Skip verification")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def system_backup(
+    ctx: click.Context,
+    output: Path,
+    compression: str,
+    no_verify: bool,
+    dry_run: bool,
+) -> None:
+    """Create a system backup bundle (OS + boot metadata)."""
+    session = get_session(ctx)
+
+    compress = None if compression == "none" else compression
+    profile = session.config.system_backup
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Output: {output}
+Compression: {compression}
+Verify: {"No" if no_verify else "Yes"}
+System profile: {profile.model_dump(mode="json")}""", title="System Backup Plan"))
+        return
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Creating system backup...", total=100)
+
+        success, message, info = session.platform.create_system_backup(
+            output,
+            compression=compress,
+            verify=not no_verify,
+            profile=profile,
+        )
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+        if info:
+            console.print(f"Partitions captured: {info.image_count}")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
 @cli.command("restore")
 @click.argument("image", type=click.Path(exists=True, path_type=Path))
 @click.argument("target")

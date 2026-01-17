@@ -95,6 +95,26 @@ class CloneMode(Enum):
     SECTOR_BY_SECTOR = "sector_by_sector"
 
 
+class BackupType(Enum):
+    """Backup type classification for restore compatibility."""
+
+    DISK_IMAGE = "disk_image"
+    SYSTEM = "system"
+    SYSTEM_PARTITION = "system_partition"
+    FILE_LEVEL = "file_level"
+
+    @classmethod
+    def from_string(cls, value: str | None) -> BackupType:
+        """Create BackupType from string value."""
+        if not value:
+            return cls.DISK_IMAGE
+        value_lower = value.lower().strip()
+        for backup_type in cls:
+            if backup_type.value == value_lower or backup_type.name.lower() == value_lower:
+                return backup_type
+        return cls.DISK_IMAGE
+
+
 class CompressionLevel(Enum):
     """Compression level presets."""
 
@@ -355,6 +375,7 @@ class ImageInfo:
     source_device: str
     source_size_bytes: int
     image_size_bytes: int
+    backup_type: BackupType = BackupType.DISK_IMAGE
     compression: str | None = None
     created_at: datetime | None = None
     checksum: str | None = None
@@ -368,11 +389,34 @@ class ImageInfo:
             "source_device": self.source_device,
             "source_size_bytes": self.source_size_bytes,
             "image_size_bytes": self.image_size_bytes,
+            "backup_type": self.backup_type.value,
             "compression": self.compression,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "checksum": self.checksum,
             "checksum_algorithm": self.checksum_algorithm,
             "format_version": self.format_version,
+            "metadata": self.metadata,
+        }
+
+
+@dataclass
+class SystemBackupInfo:
+    """Information about a system backup bundle."""
+
+    path: str
+    source_disk: str
+    image_count: int
+    images: list[ImageInfo]
+    created_at: datetime | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "path": self.path,
+            "source_disk": self.source_disk,
+            "image_count": self.image_count,
+            "images": [image.to_dict() for image in self.images],
+            "created_at": self.created_at.isoformat() if self.created_at else None,
             "metadata": self.metadata,
         }
 
