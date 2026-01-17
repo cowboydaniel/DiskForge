@@ -1389,6 +1389,146 @@ Passes: {options.passes}""", title="Wipe Device Plan"))
         sys.exit(1)
 
 
+@cli.command("wipe-system-disk")
+@click.argument("disk")
+@click.option(
+    "--method",
+    type=click.Choice(["zero", "random", "dod"]),
+    default="zero",
+    show_default=True,
+    help="Wipe method",
+)
+@click.option("--passes", type=int, default=1, show_default=True, help="Number of passes")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def wipe_system_disk(
+    ctx: click.Context,
+    disk: str,
+    method: str,
+    passes: int,
+    dry_run: bool,
+) -> None:
+    """Wipe a system disk with extra safeguards."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    disk_info = session.platform.get_disk_info(disk)
+    if disk_info is None:
+        console.print(f"[red]Disk not found: {disk}[/red]")
+        sys.exit(1)
+
+    if not disk_info.is_system_disk:
+        console.print(f"[red]Target is not the system disk: {disk}[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import SystemDiskWipeOptions
+
+    options = SystemDiskWipeOptions(
+        disk_path=disk,
+        method=method,
+        passes=max(1, passes),
+        allow_system_disk=True,
+        require_offline=True,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Target: {disk}
+Method: {method}
+Passes: {options.passes}
+Requires offline/unmounted system disk: Yes""", title="System Disk Wipe Plan"))
+        success, message = session.platform.wipe_system_disk(options, dry_run=True)
+        if not success:
+            console.print(f"[red]Compatibility check failed: {message}[/red]")
+            sys.exit(1)
+        console.print(f"[green]✓ {message}[/green]")
+        return
+
+    confirm_phrase = f"WIPE SYSTEM DISK {disk}"
+    console.print(f"[red]⚠️  This will ERASE THE SYSTEM DISK: {disk}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_phrase}' to confirm")
+
+    if user_confirm != confirm_phrase:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Wiping system disk..."):
+        success, message = session.platform.wipe_system_disk(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("secure-erase-ssd")
+@click.argument("disk")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def secure_erase_ssd(
+    ctx: click.Context,
+    disk: str,
+    dry_run: bool,
+) -> None:
+    """Run SSD secure erase workflow."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    disk_info = session.platform.get_disk_info(disk)
+    if disk_info is None:
+        console.print(f"[red]Disk not found: {disk}[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import DiskType, SSDSecureEraseOptions
+
+    if disk_info.disk_type not in {DiskType.SSD, DiskType.NVME}:
+        console.print(f"[red]Secure erase requires an SSD or NVMe device: {disk}[/red]")
+        sys.exit(1)
+
+    options = SSDSecureEraseOptions(
+        disk_path=disk,
+        allow_system_disk=False,
+        require_unmounted=True,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Target: {disk}
+Requires unmounted disk: Yes""", title="SSD Secure Erase Plan"))
+        success, message = session.platform.secure_erase_ssd(options, dry_run=True)
+        if not success:
+            console.print(f"[red]Compatibility check failed: {message}[/red]")
+            sys.exit(1)
+        console.print(f"[green]✓ {message}[/green]")
+        return
+
+    confirm_phrase = f"SECURE ERASE {disk}"
+    console.print(f"[red]⚠️  This will issue a SECURE ERASE on {disk}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_phrase}' to confirm")
+
+    if user_confirm != confirm_phrase:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Running SSD secure erase..."):
+        success, message = session.platform.secure_erase_ssd(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
 @cli.command("recover-files")
 @click.argument("source")
 @click.option(

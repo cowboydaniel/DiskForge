@@ -81,6 +81,8 @@ if TYPE_CHECKING:
         SplitPartitionOptions,
         ShredOptions,
         WipeOptions,
+        SystemDiskWipeOptions,
+        SSDSecureEraseOptions,
     )
 
 logger = get_logger(__name__)
@@ -99,6 +101,7 @@ class LinuxBackend(PlatformBackend):
     MOUNT = "mount"
     UMOUNT = "umount"
     SMARTCTL = "smartctl"
+    BLKDISCARD = "blkdiscard"
 
     # Filesystem tools
     MKFS_EXT4 = "mkfs.ext4"
@@ -920,21 +923,109 @@ class LinuxBackend(PlatformBackend):
         if target_partition and target_partition.is_mounted:
             return False, f"Partition is mounted at {target_partition.mountpoint}"
 
-        method = options.method.lower()
-        passes = max(1, options.passes)
+        pass_sources = self._build_wipe_sources(options.method, options.passes)
+        return self._run_wipe_passes(
+            options.target_path,
+            pass_sources,
+            context=context,
+            dry_run=dry_run,
+        )
 
-        if method == "dod":
-            pass_sources = ["/dev/zero", "/dev/urandom", "/dev/zero"]
-        elif method == "random":
-            pass_sources = ["/dev/urandom"] * passes
-        else:
-            pass_sources = ["/dev/zero"] * passes
+    def wipe_system_disk(
+        self,
+        options: SystemDiskWipeOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Wipe a system disk with strict safeguards."""
+        disk = self.get_disk_info(options.disk_path)
+        if not disk:
+            return False, f"Disk not found: {options.disk_path}"
+
+        if not disk.is_system_disk:
+            return False, f"Target is not a system disk: {options.disk_path}"
+
+        if not options.allow_system_disk:
+            return False, "System disk wipe requires explicit authorization"
+
+        if options.require_offline:
+            mounted_parts = [part.device_path for part in disk.partitions if part.is_mounted]
+            if mounted_parts:
+                return (
+                    False,
+                    "System disk wipe requires offline mode. Mounted partitions: "
+                    + ", ".join(mounted_parts),
+                )
+
+        pass_sources = self._build_wipe_sources(options.method, options.passes)
+        return self._run_wipe_passes(
+            options.disk_path,
+            pass_sources,
+            context=context,
+            dry_run=dry_run,
+            operation_label="Wiping system disk",
+        )
+
+    def secure_erase_ssd(
+        self,
+        options: SSDSecureEraseOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Perform secure erase workflow on an SSD."""
+        disk = self.get_disk_info(options.disk_path)
+        if not disk:
+            return False, f"Disk not found: {options.disk_path}"
+
+        if disk.disk_type not in {DiskType.SSD, DiskType.NVME}:
+            return False, f"Secure erase requires an SSD or NVMe device: {options.disk_path}"
+
+        if disk.is_system_disk and not options.allow_system_disk:
+            return False, "Cannot secure erase the system disk without explicit override"
+
+        if options.require_unmounted:
+            mounted_parts = [part.device_path for part in disk.partitions if part.is_mounted]
+            if mounted_parts:
+                return False, f"Secure erase requires unmounted partitions: {', '.join(mounted_parts)}"
+
+        if not shutil.which(self.BLKDISCARD):
+            return False, "Secure erase requires blkdiscard to be installed"
 
         if context:
-            context.update_progress(message=f"Wiping {options.target_path}")
+            context.update_progress(message=f"Secure erasing {options.disk_path}")
 
         if dry_run:
-            return True, f"Would wipe {options.target_path} with method {method}"
+            return True, f"Would issue secure discard to {options.disk_path}"
+
+        cmd = [self.BLKDISCARD, "--secure", options.disk_path]
+        result = self.run_command(cmd, timeout=86400, check=False)
+        if not result.success:
+            return False, f"Secure erase failed: {result.stderr}"
+
+        return True, f"Secure erase issued for {options.disk_path}"
+
+    def _build_wipe_sources(self, method: str, passes: int) -> list[str]:
+        method = method.lower()
+        pass_count = max(1, passes)
+        if method == "dod":
+            return ["/dev/zero", "/dev/urandom", "/dev/zero"]
+        if method == "random":
+            return ["/dev/urandom"] * pass_count
+        return ["/dev/zero"] * pass_count
+
+    def _run_wipe_passes(
+        self,
+        target_path: str,
+        pass_sources: list[str],
+        context: JobContext | None = None,
+        dry_run: bool = False,
+        operation_label: str = "Wiping",
+    ) -> tuple[bool, str]:
+        if context:
+            context.update_progress(message=f"{operation_label} {target_path}")
+
+        if dry_run:
+            return True, f"Would wipe {target_path} with {len(pass_sources)} pass(es)"
 
         for idx, source in enumerate(pass_sources, start=1):
             if context:
@@ -943,7 +1034,7 @@ class LinuxBackend(PlatformBackend):
             cmd = [
                 self.DD,
                 f"if={source}",
-                f"of={options.target_path}",
+                f"of={target_path}",
                 "bs=64M",
                 "status=progress",
                 "conv=fdatasync",
@@ -953,7 +1044,7 @@ class LinuxBackend(PlatformBackend):
                 return False, f"Wipe failed: {result.stderr}"
 
         os.sync()
-        return True, f"Wipe completed for {options.target_path}"
+        return True, f"Wipe completed for {target_path}"
 
     def recover_partitions(
         self,

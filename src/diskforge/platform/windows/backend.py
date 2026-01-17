@@ -81,6 +81,8 @@ if TYPE_CHECKING:
         SplitPartitionOptions,
         ShredOptions,
         WipeOptions,
+        SystemDiskWipeOptions,
+        SSDSecureEraseOptions,
     )
 
 logger = get_logger(__name__)
@@ -817,6 +819,22 @@ class WindowsBackend(PlatformBackend):
             return False, f"Partition wipe failed: {result.stderr}"
 
         return True, f"Wiped partition {options.target_path}"
+
+    def wipe_system_disk(
+        self,
+        options: SystemDiskWipeOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        return False, "System disk wipe is not supported in the Windows backend yet"
+
+    def secure_erase_ssd(
+        self,
+        options: SSDSecureEraseOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        return False, "SSD secure erase is not supported in the Windows backend yet"
 
     def recover_partitions(
         self,
