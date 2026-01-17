@@ -35,7 +35,7 @@ class RibbonWidget(QFrame):
         self.setObjectName("ribbon")
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setContentsMargins(12, 4, 12, 4)
         layout.setSpacing(6)
 
         self._tabs = QTabWidget()
@@ -48,7 +48,7 @@ class RibbonWidget(QFrame):
         """Add a tab with action groups."""
         tab = QWidget()
         tab_layout = QHBoxLayout(tab)
-        tab_layout.setContentsMargins(6, 6, 6, 6)
+        tab_layout.setContentsMargins(6, 4, 6, 4)
         tab_layout.setSpacing(10)
 
         for group in groups:
