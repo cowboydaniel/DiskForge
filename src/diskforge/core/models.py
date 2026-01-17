@@ -73,6 +73,21 @@ class FileSystem(Enum):
         return aliases.get(value_lower, cls.UNKNOWN)
 
 
+class CloneMode(Enum):
+    """Clone/backup strategy."""
+
+    INTELLIGENT = "intelligent"
+    SECTOR_BY_SECTOR = "sector_by_sector"
+
+
+class CompressionLevel(Enum):
+    """Compression level presets."""
+
+    FAST = "fast"
+    BALANCED = "balanced"
+    MAXIMUM = "maximum"
+
+
 class PartitionFlag(Enum):
     """Partition flags/attributes."""
 
@@ -297,9 +312,24 @@ class CloneOptions:
     source_path: str
     target_path: str
     verify: bool = True
-    skip_unallocated: bool = True
+    mode: CloneMode = CloneMode.INTELLIGENT
+    schedule: str | None = None
     compression: str | None = None  # For imaging
+    compression_level: CompressionLevel | None = None
     chunk_size_bytes: int = 64 * 1024 * 1024  # 64 MB
+
+
+@dataclass
+class ImageOptions:
+    """Options for creating disk/partition images."""
+
+    source_path: str
+    image_path: Path
+    compression: str | None = "zstd"
+    compression_level: CompressionLevel | None = None
+    verify: bool = True
+    mode: CloneMode = CloneMode.INTELLIGENT
+    schedule: str | None = None
 
 
 @dataclass

@@ -49,9 +49,13 @@ class OperationsTreeWidget(QTreeView):
             "Wizards",
             wizard_icon,
             [
-                ("Copy Disk Wizard", "clone_disk", self._icon("drive-harddisk", QStyle.SP_DriveHDIcon)),
                 (
-                    "Copy Partition Wizard",
+                    "Copy Disk Wizard (Advanced)",
+                    "clone_disk",
+                    self._icon("drive-harddisk", QStyle.SP_DriveHDIcon),
+                ),
+                (
+                    "Copy Partition Wizard (Advanced)",
                     "clone_partition",
                     self._icon("drive-removable-media", QStyle.SP_DriveFDIcon),
                 ),
@@ -82,7 +86,11 @@ class OperationsTreeWidget(QTreeView):
             "Backup & Restore",
             backup_icon,
             [
-                ("Disk Backup", "create_backup", self._icon("document-save", QStyle.SP_DialogSaveButton)),
+                (
+                    "Disk Backup (Advanced)",
+                    "create_backup",
+                    self._icon("document-save", QStyle.SP_DialogSaveButton),
+                ),
                 ("Disk Restore", "restore_backup", self._icon("document-open", QStyle.SP_DirOpenIcon)),
             ],
         )

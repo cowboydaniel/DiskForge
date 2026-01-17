@@ -20,6 +20,8 @@ from typing import TYPE_CHECKING, Any
 
 from diskforge.core.logging import get_logger
 from diskforge.core.models import (
+    CloneMode,
+    CompressionLevel,
     Disk,
     DiskInventory,
     DiskType,
@@ -826,9 +828,15 @@ class LinuxBackend(PlatformBackend):
         target_path: str,
         context: JobContext | None = None,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         """Clone a disk block-by-block using dd."""
+        if mode == CloneMode.INTELLIGENT and context:
+            context.add_warning(
+                "Intelligent clone is not supported on Linux; using sector-by-sector copy."
+            )
         source_disk = self.get_disk_info(source_path)
         target_disk = self.get_disk_info(target_path)
 
@@ -874,9 +882,15 @@ class LinuxBackend(PlatformBackend):
         target_path: str,
         context: JobContext | None = None,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         """Clone a partition block-by-block."""
+        if mode == CloneMode.INTELLIGENT and context:
+            context.add_warning(
+                "Intelligent clone is not supported on Linux; using sector-by-sector copy."
+            )
         source_part = self.get_partition_info(source_path)
         target_part = self.get_partition_info(target_path)
 
@@ -1046,10 +1060,17 @@ class LinuxBackend(PlatformBackend):
         image_path: Path,
         context: JobContext | None = None,
         compression: str | None = "zstd",
+        compression_level: CompressionLevel | None = None,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str, ImageInfo | None]:
         """Create a disk/partition image."""
+        if mode == CloneMode.INTELLIGENT and context:
+            context.add_warning(
+                "Intelligent backup is not supported on Linux; using sector-by-sector capture."
+            )
         # Check source
         source_info = self.get_disk_info(source_path) or self.get_partition_info(source_path)
         if not source_info:
@@ -1060,21 +1081,48 @@ class LinuxBackend(PlatformBackend):
         # Determine compression tool
         compress_cmd = None
         image_suffix = ""
+        level_flag: list[str] = []
+
+        if compression_level:
+            if compression in ("gzip", "gz"):
+                level_flag = [
+                    "-1"
+                    if compression_level == CompressionLevel.FAST
+                    else "-9"
+                    if compression_level == CompressionLevel.MAXIMUM
+                    else "-6"
+                ]
+            elif compression == "zstd":
+                level_flag = [
+                    "-1"
+                    if compression_level == CompressionLevel.FAST
+                    else "-9"
+                    if compression_level == CompressionLevel.MAXIMUM
+                    else "-3"
+                ]
+            elif compression == "lz4":
+                level_flag = [
+                    "-1"
+                    if compression_level == CompressionLevel.FAST
+                    else "-9"
+                    if compression_level == CompressionLevel.MAXIMUM
+                    else "-3"
+                ]
 
         if compression == "gzip":
             if not self._check_tool(self.GZIP):
                 return False, "gzip not found", None
-            compress_cmd = [self.GZIP, "-c"]
+            compress_cmd = [self.GZIP, "-c", *level_flag]
             image_suffix = ".gz"
         elif compression == "lz4":
             if not self._check_tool(self.LZ4):
                 return False, "lz4 not found", None
-            compress_cmd = [self.LZ4, "-c"]
+            compress_cmd = [self.LZ4, "-c", *level_flag]
             image_suffix = ".lz4"
         elif compression == "zstd":
             if not self._check_tool(self.ZSTD):
                 return False, "zstd not found", None
-            compress_cmd = [self.ZSTD, "-c", "-3"]
+            compress_cmd = [self.ZSTD, "-c", *level_flag] if level_flag else [self.ZSTD, "-c", "-3"]
             image_suffix = ".zst"
 
         final_path = Path(str(image_path) + image_suffix) if image_suffix else image_path
@@ -1093,7 +1141,7 @@ class LinuxBackend(PlatformBackend):
 
         try:
             start_time = datetime.now()
-            hasher = hashlib.sha256()
+            hasher = hashlib.sha256() if verify else None
 
             with open(source_path, "rb") as src:
                 if compress_cmd:
@@ -1116,7 +1164,8 @@ class LinuxBackend(PlatformBackend):
                             if not data:
                                 break
 
-                            hasher.update(data)
+                            if hasher:
+                                hasher.update(data)
                             proc.stdin.write(data)  # type: ignore
                             bytes_processed += len(data)
 
@@ -1148,7 +1197,8 @@ class LinuxBackend(PlatformBackend):
                             if not data:
                                 break
 
-                            hasher.update(data)
+                            if hasher:
+                                hasher.update(data)
                             out.write(data)
                             bytes_processed += len(data)
 
@@ -1169,8 +1219,13 @@ class LinuxBackend(PlatformBackend):
                 image_size_bytes=final_path.stat().st_size,
                 compression=compression,
                 created_at=start_time,
-                checksum=hasher.hexdigest(),
+                checksum=hasher.hexdigest() if hasher else None,
                 checksum_algorithm="sha256",
+                metadata={
+                    "clone_mode": mode.value,
+                    "schedule": schedule,
+                    "compression_level": compression_level.value if compression_level else None,
+                },
             )
 
             # Write metadata
@@ -1189,6 +1244,7 @@ class LinuxBackend(PlatformBackend):
         target_path: str,
         context: JobContext | None = None,
         verify: bool = True,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         """Restore an image to a disk/partition."""

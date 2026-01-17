@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 from diskforge.core.job import Job, JobContext
 from diskforge.core.models import (
+    CloneMode,
+    CompressionLevel,
     FileSystem,
     FormatOptions,
     ImageInfo,
@@ -224,6 +226,8 @@ class CloneDiskJob(Job[str]):
         source_path: str,
         target_path: str,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
     ) -> None:
         super().__init__(
             name="clone_disk",
@@ -232,6 +236,8 @@ class CloneDiskJob(Job[str]):
         self.source_path = source_path
         self.target_path = target_path
         self.verify = verify
+        self.mode = mode
+        self.schedule = schedule
         self._session: Session | None = None
         self._preflight_report: PreflightReport | None = None
 
@@ -287,6 +293,8 @@ class CloneDiskJob(Job[str]):
             self.target_path,
             context,
             verify=self.verify,
+            mode=self.mode,
+            schedule=self.schedule,
         )
 
         if not success:
@@ -300,6 +308,8 @@ class CloneDiskJob(Job[str]):
 Source: {self.source_path}
 Target: {self.target_path}
 Verify: {"Yes" if self.verify else "No"}
+Mode: {self.mode.value.replace("_", " ").title()}
+Schedule: {self.schedule or "Run once"}
 
 Steps:
 1. Verify source disk is accessible
@@ -325,6 +335,8 @@ class ClonePartitionJob(Job[str]):
         source_path: str,
         target_path: str,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
     ) -> None:
         super().__init__(
             name="clone_partition",
@@ -333,6 +345,8 @@ class ClonePartitionJob(Job[str]):
         self.source_path = source_path
         self.target_path = target_path
         self.verify = verify
+        self.mode = mode
+        self.schedule = schedule
         self._session: Session | None = None
 
     def set_session(self, session: Session) -> None:
@@ -354,6 +368,8 @@ class ClonePartitionJob(Job[str]):
             self.target_path,
             context,
             verify=self.verify,
+            mode=self.mode,
+            schedule=self.schedule,
         )
 
         if not success:
@@ -367,6 +383,8 @@ class ClonePartitionJob(Job[str]):
 Source: {self.source_path}
 Target: {self.target_path}
 Verify: {"Yes" if self.verify else "No"}
+Mode: {self.mode.value.replace("_", " ").title()}
+Schedule: {self.schedule or "Run once"}
 
 Steps:
 1. Verify source partition exists
@@ -388,6 +406,9 @@ class CreateImageJob(Job[ImageInfo]):
         image_path: Path,
         compression: str | None = "zstd",
         verify: bool = True,
+        compression_level: CompressionLevel | None = None,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
     ) -> None:
         super().__init__(
             name="create_image",
@@ -397,6 +418,9 @@ class CreateImageJob(Job[ImageInfo]):
         self.image_path = image_path
         self.compression = compression
         self.verify = verify
+        self.compression_level = compression_level
+        self.mode = mode
+        self.schedule = schedule
         self._session: Session | None = None
 
     def set_session(self, session: Session) -> None:
@@ -418,7 +442,10 @@ class CreateImageJob(Job[ImageInfo]):
             self.image_path,
             context,
             compression=self.compression,
+            compression_level=self.compression_level,
             verify=self.verify,
+            mode=self.mode,
+            schedule=self.schedule,
         )
 
         if not success or image_info is None:
@@ -432,7 +459,10 @@ class CreateImageJob(Job[ImageInfo]):
 Source: {self.source_path}
 Output: {self.image_path}
 Compression: {self.compression or "None"}
+Compression level: {self.compression_level.value if self.compression_level else "Balanced"}
 Verify: {"Yes" if self.verify else "No"}
+Mode: {self.mode.value.replace("_", " ").title()}
+Schedule: {self.schedule or "Run once"}
 
 Steps:
 1. Read source device

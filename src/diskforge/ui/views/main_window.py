@@ -103,10 +103,10 @@ class MainWindow(QMainWindow):
             "refresh": QAction("Refresh", self),
             "exit": QAction("Exit", self),
             "clone": QAction("Clone", self),
-            "clone_disk": QAction("Copy Disk Wizard...", self),
-            "clone_partition": QAction("Copy Partition Wizard...", self),
-            "backup": QAction("Disk Backup", self),
-            "create_backup": QAction("Disk Backup...", self),
+            "clone_disk": QAction("Copy Disk Wizard (Advanced)...", self),
+            "clone_partition": QAction("Copy Partition Wizard (Advanced)...", self),
+            "backup": QAction("Disk Backup (Advanced)", self),
+            "create_backup": QAction("Disk Backup (Advanced)...", self),
             "restore_backup": QAction("Disk Restore...", self),
             "rescue_media": QAction("Make Bootable Media...", self),
             "danger_mode": QAction("Toggle Danger Mode", self),
@@ -184,6 +184,11 @@ class MainWindow(QMainWindow):
         actions["migrate_system"].triggered.connect(self._on_migrate_system)
         actions["clone"].triggered.connect(self._on_clone_disk)
         actions["backup"].triggered.connect(self._on_create_backup)
+
+        actions["clone_disk"].setStatusTip("Clone a disk with intelligent/sector-by-sector options")
+        actions["clone_partition"].setStatusTip("Clone a partition with validation and scheduling options")
+        actions["create_backup"].setStatusTip("Create a backup with compression levels and validation options")
+        actions["restore_backup"].setStatusTip("Restore a backup image to a disk or partition")
 
         return actions
 

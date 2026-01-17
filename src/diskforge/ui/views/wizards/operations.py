@@ -20,10 +20,13 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QFormLayout,
     QTextEdit,
+    QCheckBox,
 )
 
 from diskforge.core.models import (
     AlignOptions,
+    CloneMode,
+    CompressionLevel,
     ConvertDiskOptions,
     Disk,
     FileSystem,
@@ -383,6 +386,23 @@ class CloneDiskWizard(DiskForgeWizard):
         target_layout.addRow("Target disk:", self._target_combo)
         target_layout.addRow(QLabel(f"Source disk: {source.device_path}"))
 
+        options_page = QWizardPage()
+        options_page.setTitle("Clone Options")
+        options_layout = QFormLayout(options_page)
+        self._clone_mode_combo = QComboBox()
+        self._clone_mode_combo.addItem("Intelligent clone (recommended)", CloneMode.INTELLIGENT)
+        self._clone_mode_combo.addItem("Sector-by-sector clone", CloneMode.SECTOR_BY_SECTOR)
+        self._clone_validate_check = QCheckBox("Validate after clone")
+        self._clone_validate_check.setChecked(True)
+        self._clone_schedule_combo = QComboBox()
+        self._clone_schedule_combo.addItem("Run once (no schedule)", None)
+        self._clone_schedule_combo.addItem("Daily", "Daily")
+        self._clone_schedule_combo.addItem("Weekly", "Weekly")
+        self._clone_schedule_combo.addItem("Monthly", "Monthly")
+        options_layout.addRow("Clone mode:", self._clone_mode_combo)
+        options_layout.addRow("Schedule:", self._clone_schedule_combo)
+        options_layout.addRow("", self._clone_validate_check)
+
         confirm_page = ConfirmationPage(
             "Confirm Clone",
             "This will DESTROY ALL DATA on the target disk.",
@@ -402,12 +422,19 @@ class CloneDiskWizard(DiskForgeWizard):
         )
 
         self.addPage(target_page)
+        self.addPage(options_page)
         self.addPage(confirm_page)
         self.addPage(result_page)
 
     def _clone_disk(self) -> OperationResult:
         target_path = self._target_combo.currentData()
-        success, message = self._session.platform.clone_disk(self._source.device_path, target_path)
+        success, message = self._session.platform.clone_disk(
+            self._source.device_path,
+            target_path,
+            verify=self._clone_validate_check.isChecked(),
+            mode=self._clone_mode_combo.currentData(),
+            schedule=self._clone_schedule_combo.currentData(),
+        )
         return OperationResult(success=success, message=message)
 
 
@@ -435,6 +462,23 @@ class ClonePartitionWizard(DiskForgeWizard):
         target_layout.addRow("Target path:", self._target_input)
         target_layout.addRow(QLabel(f"Source partition: {source.device_path}"))
 
+        options_page = QWizardPage()
+        options_page.setTitle("Clone Options")
+        options_layout = QFormLayout(options_page)
+        self._clone_mode_combo = QComboBox()
+        self._clone_mode_combo.addItem("Intelligent clone (recommended)", CloneMode.INTELLIGENT)
+        self._clone_mode_combo.addItem("Sector-by-sector clone", CloneMode.SECTOR_BY_SECTOR)
+        self._clone_validate_check = QCheckBox("Validate after clone")
+        self._clone_validate_check.setChecked(True)
+        self._clone_schedule_combo = QComboBox()
+        self._clone_schedule_combo.addItem("Run once (no schedule)", None)
+        self._clone_schedule_combo.addItem("Daily", "Daily")
+        self._clone_schedule_combo.addItem("Weekly", "Weekly")
+        self._clone_schedule_combo.addItem("Monthly", "Monthly")
+        options_layout.addRow("Clone mode:", self._clone_mode_combo)
+        options_layout.addRow("Schedule:", self._clone_schedule_combo)
+        options_layout.addRow("", self._clone_validate_check)
+
         confirm_page = ConfirmationPage(
             "Confirm Clone",
             "This will DESTROY ALL DATA on the target partition.",
@@ -454,12 +498,19 @@ class ClonePartitionWizard(DiskForgeWizard):
         )
 
         self.addPage(target_page)
+        self.addPage(options_page)
         self.addPage(confirm_page)
         self.addPage(result_page)
 
     def _clone_partition(self) -> OperationResult:
         target_path = self._target_input.text().strip()
-        success, message = self._session.platform.clone_partition(self._source.device_path, target_path)
+        success, message = self._session.platform.clone_partition(
+            self._source.device_path,
+            target_path,
+            verify=self._clone_validate_check.isChecked(),
+            mode=self._clone_mode_combo.currentData(),
+            schedule=self._clone_schedule_combo.currentData(),
+        )
         return OperationResult(success=success, message=message)
 
 
@@ -479,11 +530,31 @@ class CreateBackupWizard(DiskForgeWizard):
         )
 
         compress_page = QWizardPage()
-        compress_page.setTitle("Compression")
+        compress_page.setTitle("Backup Options")
         compress_layout = QFormLayout(compress_page)
         self._compression_combo = QComboBox()
         self._compression_combo.addItems(["zstd (recommended)", "gzip", "none"])
+        self._compression_level_combo = QComboBox()
+        self._compression_level_combo.addItem("Balanced", CompressionLevel.BALANCED)
+        self._compression_level_combo.addItem("Fast", CompressionLevel.FAST)
+        self._compression_level_combo.addItem("Maximum", CompressionLevel.MAXIMUM)
+        self._backup_mode_combo = QComboBox()
+        self._backup_mode_combo.addItem("Intelligent backup (recommended)", CloneMode.INTELLIGENT)
+        self._backup_mode_combo.addItem("Sector-by-sector backup", CloneMode.SECTOR_BY_SECTOR)
+        self._backup_validate_check = QCheckBox("Validate backup after creation")
+        self._backup_validate_check.setChecked(True)
+        self._backup_schedule_combo = QComboBox()
+        self._backup_schedule_combo.addItem("Run once (no schedule)", None)
+        self._backup_schedule_combo.addItem("Daily", "Daily")
+        self._backup_schedule_combo.addItem("Weekly", "Weekly")
+        self._backup_schedule_combo.addItem("Monthly", "Monthly")
         compress_layout.addRow("Compression:", self._compression_combo)
+        compress_layout.addRow("Compression level:", self._compression_level_combo)
+        compress_layout.addRow("Backup mode:", self._backup_mode_combo)
+        compress_layout.addRow("Schedule:", self._backup_schedule_combo)
+        compress_layout.addRow("", self._backup_validate_check)
+        self._compression_combo.currentTextChanged.connect(self._on_compression_changed)
+        self._on_compression_changed(self._compression_combo.currentText())
 
         result_page = OperationResultPage(
             "Create Backup",
@@ -503,12 +574,20 @@ class CreateBackupWizard(DiskForgeWizard):
             "none": None,
         }
         compression = compress_map[self._compression_combo.currentText()]
+        compression_level = self._compression_level_combo.currentData() if compression else None
         success, message, _info = self._session.platform.create_image(
             self._source_path,
             Path(output_path),
             compression=compression,
+            compression_level=compression_level,
+            verify=self._backup_validate_check.isChecked(),
+            mode=self._backup_mode_combo.currentData(),
+            schedule=self._backup_schedule_combo.currentData(),
         )
         return OperationResult(success=success, message=message)
+
+    def _on_compression_changed(self, selection: str) -> None:
+        self._compression_level_combo.setEnabled(selection != "none")
 
 
 class RestoreBackupWizard(DiskForgeWizard):
