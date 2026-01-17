@@ -44,6 +44,7 @@ from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
 from diskforge.ui.widgets.disk_view import DiskMapWidget
 from diskforge.ui.widgets.operations_tree import OperationsTreeWidget
 from diskforge.ui.widgets.progress_widget import ProgressWidget, PendingOperationsWidget
+from diskforge.ui.widgets.selection_actions_panel import SelectionActionsPanel
 from diskforge.ui.widgets.ribbon import RibbonWidget, RibbonButton, RibbonGroup
 from diskforge.ui.views.wizards import (
     CreatePartitionWizard,
@@ -117,6 +118,7 @@ class MainWindow(QMainWindow):
         self._job_model = JobModel(session.job_runner, self)
         self._pending_model = PendingOperationsModel(self)
         self._active_job_id: str | None = None
+        self._selected_disk: Disk | None = None
         self._selected_partition: Partition | None = None
 
         # Set up UI
@@ -743,6 +745,13 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(12, 12, 12, 12)
         right_layout.setSpacing(12)
 
+        selection_actions_group = QGroupBox("Selection Actions")
+        selection_actions_layout = QVBoxLayout(selection_actions_group)
+        self._selection_actions_panel = SelectionActionsPanel(self._actions, selection_actions_group)
+        self._selection_actions_panel.propertiesRequested.connect(self._show_selection_properties)
+        selection_actions_layout.addWidget(self._selection_actions_panel)
+        right_layout.addWidget(selection_actions_group)
+
         actions_group = QGroupBox("Actions")
         actions_layout = QVBoxLayout(actions_group)
 
@@ -1017,6 +1026,9 @@ class MainWindow(QMainWindow):
         if not indexes:
             self._details_label.setText("Select a disk or partition")
             self._set_disk_map(None)
+            self._selected_disk = None
+            self._selected_partition = None
+            self._selection_actions_panel.set_selection(None)
             return
 
         item = self._disk_model.getItemAtIndex(indexes[0])
@@ -1026,8 +1038,10 @@ class MainWindow(QMainWindow):
         if isinstance(item, Disk):
             self._show_disk_details(item)
             self._set_disk_map(item)
+            self._selection_actions_panel.set_selection("disk", item.device_path)
         elif isinstance(item, Partition):
             self._show_partition_details(item)
+            self._selection_actions_panel.set_selection("partition", item.device_path)
             parent_index = indexes[0].parent()
             parent_item = self._disk_model.getItemAtIndex(parent_index) if parent_index.isValid() else None
             if isinstance(parent_item, Disk):
@@ -1047,6 +1061,7 @@ class MainWindow(QMainWindow):
 <tr><td>System Disk:</td><td>{"Yes" if disk.is_system_disk else "No"}</td></tr>
 </table>"""
         self._details_label.setText(text)
+        self._selected_disk = disk
         self._selected_partition = None
         self._refresh_bitlocker_panel()
 
@@ -1064,6 +1079,7 @@ class MainWindow(QMainWindow):
 <tr><td>Flags:</td><td>{flags}</td></tr>
 </table>"""
         self._details_label.setText(text)
+        self._selected_disk = None
         self._selected_partition = partition
         self._refresh_bitlocker_panel(partition.mountpoint)
 
@@ -1084,6 +1100,14 @@ class MainWindow(QMainWindow):
     def _on_partition_selected(self, partition: Partition) -> None:
         """Handle partition selection from graphics view."""
         self._show_partition_details(partition)
+        self._selection_actions_panel.set_selection("partition", partition.device_path)
+
+    def _show_selection_properties(self) -> None:
+        """Show the properties for the current selection."""
+        if not self._details_label.text():
+            QMessageBox.information(self, "Properties", "Select a disk or partition to view properties.")
+            return
+        QMessageBox.information(self, "Properties", self._details_label.text())
 
     def _current_bitlocker_mount_point(self) -> str | None:
         if self._selected_partition and self._selected_partition.mountpoint:
