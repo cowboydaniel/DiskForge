@@ -412,6 +412,15 @@ class ResizeMoveOptions:
 
 
 @dataclass
+class DynamicVolumeResizeMoveOptions:
+    """Options for resizing or moving a dynamic volume."""
+
+    volume_id: str
+    new_size_bytes: int | None = None
+    new_start_sector: int | None = None
+
+
+@dataclass
 class MergePartitionsOptions:
     """Options for merging two partitions."""
 

@@ -35,6 +35,7 @@ if TYPE_CHECKING:
         PartitionAttributeOptions,
         InitializeDiskOptions,
         PartitionRecoveryOptions,
+        DynamicVolumeResizeMoveOptions,
         ResizeMoveOptions,
         SplitPartitionOptions,
         WipeOptions,
@@ -167,6 +168,18 @@ class PlatformBackend(ABC):
         """
 
     @abstractmethod
+    def resize_move_dynamic_volume(
+        self,
+        options: DynamicVolumeResizeMoveOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Resize or move a dynamic volume.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
     def merge_partitions(
         self,
         options: MergePartitionsOptions,
@@ -204,6 +217,19 @@ class PlatformBackend(ABC):
         """
 
     @abstractmethod
+    def extend_dynamic_volume(
+        self,
+        volume_id: str,
+        new_size_bytes: int,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Extend a dynamic volume.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
     def shrink_partition(
         self,
         partition_path: str,
@@ -213,6 +239,19 @@ class PlatformBackend(ABC):
     ) -> tuple[bool, str]:
         """
         Shrink a partition.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def shrink_dynamic_volume(
+        self,
+        volume_id: str,
+        new_size_bytes: int,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Shrink a dynamic volume.
         Returns (success, message/error).
         """
 

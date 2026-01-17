@@ -54,10 +54,13 @@ from diskforge.ui.views.wizards import (
     RestoreBackupWizard,
     RescueMediaWizard,
     ResizeMovePartitionWizard,
+    ResizeMoveDynamicVolumeWizard,
     MergePartitionsWizard,
     SplitPartitionWizard,
     ExtendPartitionWizard,
     ShrinkPartitionWizard,
+    ExtendDynamicVolumeWizard,
+    ShrinkDynamicVolumeWizard,
     AllocateFreeSpaceWizard,
     OneClickAdjustSpaceWizard,
     QuickPartitionWizard,
@@ -126,10 +129,13 @@ class MainWindow(QMainWindow):
             "format_partition": QAction("Format Partition...", self),
             "delete_partition": QAction("Delete Partition...", self),
             "resize_move_partition": QAction("Resize/Move Partition...", self),
+            "resize_move_dynamic_volume": QAction("Resize/Move Dynamic Volume...", self),
             "merge_partitions": QAction("Merge Partitions...", self),
             "split_partition": QAction("Split Partition...", self),
             "extend_partition": QAction("Extend Partition...", self),
             "shrink_partition": QAction("Shrink Partition...", self),
+            "extend_dynamic_volume": QAction("Extend Dynamic Volume...", self),
+            "shrink_dynamic_volume": QAction("Shrink Dynamic Volume...", self),
             "allocate_free_space": QAction("Allocate Free Space...", self),
             "one_click_adjust_space": QAction("One-Click Adjust Space...", self),
             "quick_partition": QAction("Quick Partition...", self),
@@ -164,10 +170,13 @@ class MainWindow(QMainWindow):
             "format_partition": DiskForgeIcons.FORMAT_PARTITION,
             "delete_partition": DiskForgeIcons.DELETE_PARTITION,
             "resize_move_partition": DiskForgeIcons.CREATE_PARTITION,
+            "resize_move_dynamic_volume": DiskForgeIcons.CREATE_PARTITION,
             "merge_partitions": DiskForgeIcons.CREATE_PARTITION,
             "split_partition": DiskForgeIcons.CREATE_PARTITION,
             "extend_partition": DiskForgeIcons.CREATE_PARTITION,
             "shrink_partition": DiskForgeIcons.FORMAT_PARTITION,
+            "extend_dynamic_volume": DiskForgeIcons.CREATE_PARTITION,
+            "shrink_dynamic_volume": DiskForgeIcons.FORMAT_PARTITION,
             "allocate_free_space": DiskForgeIcons.CREATE_PARTITION,
             "one_click_adjust_space": DiskForgeIcons.CREATE_PARTITION,
             "quick_partition": DiskForgeIcons.CREATE_PARTITION,
@@ -206,10 +215,13 @@ class MainWindow(QMainWindow):
         actions["format_partition"].triggered.connect(self._on_format_partition)
         actions["delete_partition"].triggered.connect(self._on_delete_partition)
         actions["resize_move_partition"].triggered.connect(self._on_resize_move_partition)
+        actions["resize_move_dynamic_volume"].triggered.connect(self._on_resize_move_dynamic_volume)
         actions["merge_partitions"].triggered.connect(self._on_merge_partitions)
         actions["split_partition"].triggered.connect(self._on_split_partition)
         actions["extend_partition"].triggered.connect(self._on_extend_partition)
         actions["shrink_partition"].triggered.connect(self._on_shrink_partition)
+        actions["extend_dynamic_volume"].triggered.connect(self._on_extend_dynamic_volume)
+        actions["shrink_dynamic_volume"].triggered.connect(self._on_shrink_dynamic_volume)
         actions["allocate_free_space"].triggered.connect(self._on_allocate_free_space)
         actions["one_click_adjust_space"].triggered.connect(self._on_one_click_adjust_space)
         actions["quick_partition"].triggered.connect(self._on_quick_partition)
@@ -280,6 +292,17 @@ class MainWindow(QMainWindow):
                         [
                             RibbonButton(self._actions["extend_partition"], size="small"),
                             RibbonButton(self._actions["shrink_partition"], size="small"),
+                        ],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Dynamic Volumes",
+                    columns=[
+                        [RibbonButton(self._actions["resize_move_dynamic_volume"])],
+                        [
+                            RibbonButton(self._actions["extend_dynamic_volume"], size="small"),
+                            RibbonButton(self._actions["shrink_dynamic_volume"], size="small"),
                         ],
                     ],
                     separator_after=True,
@@ -962,6 +985,16 @@ class MainWindow(QMainWindow):
                     return disk
         return None
 
+    def _get_selected_volume_id(self) -> str | None:
+        """Return a best-effort volume identifier from the current selection."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            return None
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Partition):
+            return item.mountpoint or item.device_path
+        return None
+
     def _on_create_partition(self) -> None:
         """Handle create partition action."""
         indexes = self._disk_tree.selectionModel().selectedIndexes()
@@ -1099,6 +1132,19 @@ class MainWindow(QMainWindow):
         )
         self._run_wizard(wizard)
 
+    def _on_resize_move_dynamic_volume(self) -> None:
+        """Handle resize/move dynamic volume action."""
+        if not self._check_danger_mode():
+            return
+
+        wizard = ResizeMoveDynamicVolumeWizard(
+            self._session,
+            self._get_selected_volume_id(),
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
     def _on_merge_partitions(self) -> None:
         """Handle merge partitions action."""
         indexes = self._disk_tree.selectionModel().selectedIndexes()
@@ -1224,6 +1270,32 @@ class MainWindow(QMainWindow):
         wizard = ShrinkPartitionWizard(
             self._session,
             partition,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_extend_dynamic_volume(self) -> None:
+        """Handle extend dynamic volume action."""
+        if not self._check_danger_mode():
+            return
+
+        wizard = ExtendDynamicVolumeWizard(
+            self._session,
+            self._get_selected_volume_id(),
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_shrink_dynamic_volume(self) -> None:
+        """Handle shrink dynamic volume action."""
+        if not self._check_danger_mode():
+            return
+
+        wizard = ShrinkDynamicVolumeWizard(
+            self._session,
+            self._get_selected_volume_id(),
             self._status_label.setText,
             self,
         )

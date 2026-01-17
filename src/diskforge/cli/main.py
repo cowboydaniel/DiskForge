@@ -624,6 +624,161 @@ New size: {humanize.naturalsize(size_bytes, binary=True)}""", title="Shrink Part
         sys.exit(1)
 
 
+@cli.command("resize-move-dynamic-volume")
+@click.argument("volume")
+@click.option("--size", "-s", required=True, help="Target size for the dynamic volume (e.g., 10G, 500M)")
+@click.option("--start-sector", type=int, help="Optional new start sector (platform-specific)")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def resize_move_dynamic_volume(
+    ctx: click.Context,
+    volume: str,
+    size: str,
+    start_sector: int | None,
+    dry_run: bool,
+) -> None:
+    """Resize or move a dynamic volume."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required for this operation[/red]")
+        sys.exit(1)
+
+    size_bytes = parse_size(size)
+    if size_bytes is None:
+        console.print(f"[red]Invalid size format: {size}[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import DynamicVolumeResizeMoveOptions
+
+    options = DynamicVolumeResizeMoveOptions(
+        volume_id=volume,
+        new_size_bytes=size_bytes,
+        new_start_sector=start_sector,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Dynamic volume: {volume}
+New size: {humanize.naturalsize(size_bytes, binary=True)}
+Start sector: {start_sector or "(unchanged)"}""", title="Resize/Move Dynamic Volume Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(volume)
+    console.print(f"[red]⚠️  This will resize/move dynamic volume {volume}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Resizing/moving dynamic volume..."):
+        success, message = session.platform.resize_move_dynamic_volume(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("extend-dynamic-volume")
+@click.argument("volume")
+@click.option("--size", "-s", required=True, help="Target size for the dynamic volume (e.g., 10G, 500M)")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def extend_dynamic_volume(
+    ctx: click.Context,
+    volume: str,
+    size: str,
+    dry_run: bool,
+) -> None:
+    """Extend a dynamic volume."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    size_bytes = parse_size(size)
+    if size_bytes is None:
+        console.print(f"[red]Invalid size format: {size}[/red]")
+        sys.exit(1)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Dynamic volume: {volume}
+New size: {humanize.naturalsize(size_bytes, binary=True)}""", title="Extend Dynamic Volume Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(volume)
+    console.print(f"[red]⚠️  This will extend dynamic volume {volume}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Extending dynamic volume..."):
+        success, message = session.platform.extend_dynamic_volume(volume, size_bytes)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("shrink-dynamic-volume")
+@click.argument("volume")
+@click.option("--size", "-s", required=True, help="Target size for the dynamic volume (e.g., 10G, 500M)")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def shrink_dynamic_volume(
+    ctx: click.Context,
+    volume: str,
+    size: str,
+    dry_run: bool,
+) -> None:
+    """Shrink a dynamic volume."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    size_bytes = parse_size(size)
+    if size_bytes is None:
+        console.print(f"[red]Invalid size format: {size}[/red]")
+        sys.exit(1)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Dynamic volume: {volume}
+New size: {humanize.naturalsize(size_bytes, binary=True)}""", title="Shrink Dynamic Volume Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(volume)
+    console.print(f"[red]⚠️  This will shrink dynamic volume {volume}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Shrinking dynamic volume..."):
+        success, message = session.platform.shrink_dynamic_volume(volume, size_bytes)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
 @cli.command("allocate-free-space")
 @click.argument("disk")
 @click.argument("source_partition")
