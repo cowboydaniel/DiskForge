@@ -20,23 +20,34 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from PySide6.QtCore import Qt, Signal, QRectF
-from PySide6.QtGui import QColor, QBrush, QPen, QFont, QPainter, QFontMetrics
+from PySide6.QtGui import (
+    QColor,
+    QBrush,
+    QPen,
+    QFont,
+    QPainter,
+    QFontMetrics,
+    QLinearGradient,
+)
 import humanize
 
 from diskforge.core.models import Disk, Partition, FileSystem
 
 
 FILESYSTEM_COLORS = {
-    FileSystem.NTFS: QColor(0, 120, 215),
-    FileSystem.FAT32: QColor(255, 185, 0),
-    FileSystem.EXFAT: QColor(255, 185, 0),
-    FileSystem.EXT4: QColor(76, 175, 80),
-    FileSystem.EXT3: QColor(76, 175, 80),
-    FileSystem.XFS: QColor(156, 39, 176),
-    FileSystem.BTRFS: QColor(255, 152, 0),
-    FileSystem.SWAP: QColor(158, 158, 158),
-    FileSystem.UNKNOWN: QColor(200, 200, 200),
+    FileSystem.NTFS: QColor(46, 119, 210),
+    FileSystem.FAT32: QColor(240, 178, 52),
+    FileSystem.EXFAT: QColor(240, 178, 52),
+    FileSystem.EXT4: QColor(84, 179, 109),
+    FileSystem.EXT3: QColor(84, 179, 109),
+    FileSystem.XFS: QColor(147, 95, 204),
+    FileSystem.BTRFS: QColor(240, 140, 48),
+    FileSystem.SWAP: QColor(140, 140, 140),
+    FileSystem.UNKNOWN: QColor(193, 193, 193),
 }
+
+HIGHLIGHT_COLOR = QColor(47, 132, 214)
+HIGHLIGHT_GLOW = QColor(255, 255, 255, 150)
 
 
 def filesystem_color(filesystem: FileSystem) -> QColor:
@@ -47,6 +58,16 @@ def filesystem_color(filesystem: FileSystem) -> QColor:
 def is_dark_color(color: QColor) -> bool:
     """Determine if a color is dark for contrast."""
     return (color.redF() * 0.299 + color.greenF() * 0.587 + color.blueF() * 0.114) < 0.5
+
+
+def gradient_qss(color: QColor) -> str:
+    """Return a QSS linear gradient for a color swatch."""
+    top = color.lighter(125).name()
+    bottom = color.darker(115).name()
+    return (
+        "qlineargradient(x1:0, y1:0, x2:0, y2:1, "
+        f"stop:0 {top}, stop:1 {bottom})"
+    )
 
 
 class PartitionRectItem(QGraphicsRectItem):
@@ -62,14 +83,12 @@ class PartitionRectItem(QGraphicsRectItem):
         self.partition = partition
 
         # Set color based on filesystem
-        color = filesystem_color(partition.filesystem)
-        self.setBrush(QBrush(color))
-        self.setPen(QPen(QColor(40, 40, 40), 1))
+        self._base_color = filesystem_color(partition.filesystem)
+        self._border_pen = QPen(QColor(78, 92, 124), 1)
 
         # Hover effects
         self.setAcceptHoverEvents(True)
-        self._normal_brush = QBrush(color)
-        self._hover_brush = QBrush(color.lighter(120))
+        self._hovered = False
 
         # Tooltip
         tooltip = (
@@ -85,12 +104,46 @@ class PartitionRectItem(QGraphicsRectItem):
         self.setToolTip(tooltip)
 
     def hoverEnterEvent(self, event: QGraphicsItem.GraphicsItemChange) -> None:
-        self.setBrush(self._hover_brush)
+        self._hovered = True
+        self.update()
         super().hoverEnterEvent(event)
 
     def hoverLeaveEvent(self, event: QGraphicsItem.GraphicsItemChange) -> None:
-        self.setBrush(self._normal_brush)
+        self._hovered = False
+        self.update()
         super().hoverLeaveEvent(event)
+
+    def _partition_gradient(self, rect: QRectF) -> QBrush:
+        gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        gradient.setColorAt(0.0, self._base_color.lighter(125))
+        gradient.setColorAt(0.55, self._base_color)
+        gradient.setColorAt(1.0, self._base_color.darker(115))
+        return QBrush(gradient)
+
+    def paint(self, painter: QPainter, option: QGraphicsItem, widget: QWidget | None = None) -> None:
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        rect = self.rect()
+        radius = 2
+
+        painter.setPen(self._border_pen)
+        painter.setBrush(self._partition_gradient(rect))
+        painter.drawRoundedRect(rect, radius, radius)
+
+        band_height = min(max(rect.height() * 0.22, 6), 14)
+        band_rect = QRectF(rect.left(), rect.top(), rect.width(), band_height)
+        painter.fillRect(band_rect, self._base_color.darker(120))
+        painter.setPen(QPen(QColor(255, 255, 255, 130), 1))
+        painter.drawLine(band_rect.left() + 1, band_rect.bottom(), band_rect.right() - 1, band_rect.bottom())
+
+        if self._hovered or self.isSelected():
+            highlight_pen = QPen(HIGHLIGHT_COLOR, 2)
+            painter.setPen(highlight_pen)
+            painter.setBrush(Qt.NoBrush)
+            painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), radius, radius)
+
+            if self._hovered and not self.isSelected():
+                painter.setPen(QPen(HIGHLIGHT_GLOW, 1))
+                painter.drawRoundedRect(rect.adjusted(2, 2, -2, -2), radius, radius)
 
 
 class DiskGraphicsView(QGraphicsView):
@@ -141,8 +194,8 @@ class DiskGraphicsView(QGraphicsView):
             y_offset,
             width,
             height,
-            QPen(QColor(70, 70, 70), 1),
-            QBrush(QColor(247, 247, 247)),
+            QPen(QColor(164, 182, 211), 1),
+            QBrush(QColor(250, 252, 255)),
         )
         disk_rect.setZValue(0)
 
@@ -186,36 +239,49 @@ class DiskGraphicsView(QGraphicsView):
             label = partition.label or partition.mountpoint or f"Partition {partition.number}"
             size_text = humanize.naturalsize(partition.size_bytes, binary=True)
             fs_text = partition.filesystem.value
-            label_text = f"<div align='center'><b>{label}</b><br>{fs_text} • {size_text}</div>"
 
-            text_item = QGraphicsTextItem()
-            text_item.setHtml(label_text)
-            text_item.setFont(text_font)
-            text_item.setTextWidth(max(part_width - 6, 10))
-            text_item.setPos(current_x + 1, y_offset + 8)
-            text_item.setZValue(2)
+            band_height = min(max((height - 10) * 0.22, 6), 14)
+            padding_x = 6
+            label_item = QGraphicsTextItem(f"<b>{label}</b>")
+            label_item.setFont(text_font)
+            label_item.setTextWidth(max(part_width - padding_x * 2, 10))
+            label_item.setPos(current_x + padding_x, y_offset + 6)
+            label_item.setZValue(2)
+            label_item.setDefaultTextColor(Qt.white)
 
-            if is_dark_color(part_item.brush().color()):
-                text_item.setDefaultTextColor(Qt.white)
-            else:
-                text_item.setDefaultTextColor(QColor(30, 30, 30))
+            meta_item = QGraphicsTextItem(f"{fs_text} • {size_text}")
+            meta_item.setFont(text_font)
+            meta_item.setTextWidth(max(part_width - padding_x * 2, 10))
+            meta_item.setPos(current_x + padding_x, y_offset + 6 + band_height + 4)
+            meta_item.setZValue(2)
+            meta_item.setDefaultTextColor(
+                Qt.white if is_dark_color(part_item._base_color) else QColor(38, 38, 38)
+            )
 
-            text_height = text_metrics.height() * 2.2
-            if part_width >= 48 and text_height < height:
-                self._scene.addItem(text_item)
+            label_height = text_metrics.height() + band_height
+            meta_height = text_metrics.height() * 1.4
+            if part_width >= 62 and (label_height + meta_height) < height:
+                self._scene.addItem(label_item)
+                self._scene.addItem(meta_item)
+            elif part_width >= 46:
+                label_item.setPos(current_x + padding_x, y_offset + 12)
+                self._scene.addItem(label_item)
 
             current_x += part_width
 
         # Show unallocated space
         if self._disk.unallocated_bytes > 0:
             if unalloc_width > 5:
+                unalloc_gradient = QLinearGradient(0, y_offset + 5, 0, y_offset + height - 5)
+                unalloc_gradient.setColorAt(0.0, QColor(248, 248, 248))
+                unalloc_gradient.setColorAt(1.0, QColor(232, 232, 232))
                 unalloc_rect = self._scene.addRect(
                     current_x,
                     y_offset + 5,
                     unalloc_width - 2,
                     height - 10,
-                    QPen(QColor(120, 120, 120), 1, Qt.DashLine),
-                    QBrush(QColor(245, 245, 245)),
+                    QPen(QColor(140, 140, 140), 1, Qt.DashLine),
+                    QBrush(unalloc_gradient),
                 )
                 unalloc_rect.setZValue(1)
 
@@ -224,7 +290,7 @@ class DiskGraphicsView(QGraphicsView):
                     f"<div align='center'><b>Unallocated</b><br>{size_text}</div>"
                 )
                 unalloc_label.setFont(text_font)
-                unalloc_label.setDefaultTextColor(QColor(80, 80, 80))
+                unalloc_label.setDefaultTextColor(QColor(84, 94, 112))
                 unalloc_label.setTextWidth(max(unalloc_width - 6, 10))
                 unalloc_label.setPos(current_x + 1, y_offset + 8)
                 unalloc_label.setZValue(2)
@@ -251,23 +317,34 @@ class DiskGraphicsView(QGraphicsView):
 class DiskLegendItem(QWidget):
     """Legend item showing a color swatch and label."""
 
-    def __init__(self, text: str, color: QColor, parent: QWidget | None = None) -> None:
+    def __init__(self, text: str, meta: str, color: QColor, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(8)
 
         swatch = QFrame()
-        swatch.setFixedSize(14, 14)
+        swatch.setObjectName("legendSwatch")
+        swatch.setFixedSize(16, 16)
         swatch.setStyleSheet(
-            f"background-color: {color.name()}; border: 1px solid #444; border-radius: 2px;"
+            "border: 1px solid #4b5a7a; border-radius: 2px; "
+            f"background: {gradient_qss(color)};"
         )
+
+        text_layout = QVBoxLayout()
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(2)
 
         label = QLabel(text)
         label.setObjectName("legendLabel")
+        meta_label = QLabel(meta)
+        meta_label.setObjectName("legendMeta")
+
+        text_layout.addWidget(label)
+        text_layout.addWidget(meta_label)
 
         layout.addWidget(swatch)
-        layout.addWidget(label)
+        layout.addLayout(text_layout)
 
 
 class DiskLegendWidget(QWidget):
@@ -275,38 +352,83 @@ class DiskLegendWidget(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._layout = QHBoxLayout(self)
+        self.setObjectName("diskLegend")
+        self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(4, 0, 4, 0)
-        self._layout.setSpacing(14)
-        self._layout.addStretch()
+        self._layout.setSpacing(6)
 
-    def set_disk(self, disk: Disk | None) -> None:
-        """Update legend entries based on the disk."""
-        while self._layout.count():
-            item = self._layout.takeAt(0)
+        self._meta_layout = QHBoxLayout()
+        self._meta_layout.setSpacing(10)
+        self._layout.addLayout(self._meta_layout)
+
+        self._items_layout = QHBoxLayout()
+        self._items_layout.setSpacing(16)
+        self._layout.addLayout(self._items_layout)
+        self._items_layout.addStretch()
+
+    def _clear_layout(self, layout: QHBoxLayout) -> None:
+        while layout.count():
+            item = layout.takeAt(0)
             widget = item.widget()
             if widget:
                 widget.deleteLater()
 
+    def set_disk(self, disk: Disk | None) -> None:
+        """Update legend entries based on the disk."""
+        self._clear_layout(self._meta_layout)
+        self._clear_layout(self._items_layout)
+        self._items_layout.addStretch()
+
         if disk is None:
             empty_label = QLabel("No disk selected")
             empty_label.setObjectName("legendEmpty")
-            self._layout.addWidget(empty_label)
-            self._layout.addStretch()
+            self._meta_layout.addWidget(empty_label)
+            self._meta_layout.addStretch()
             return
 
-        filesystems = []
-        for partition in disk.partitions:
-            if partition.filesystem not in filesystems:
-                filesystems.append(partition.filesystem)
+        disk_name = QLabel("Disk:")
+        disk_name.setObjectName("legendTitle")
+        disk_value = QLabel(disk.display_name)
+        disk_value.setObjectName("legendValue")
+        capacity_name = QLabel("Capacity:")
+        capacity_name.setObjectName("legendTitle")
+        capacity_value = QLabel(humanize.naturalsize(disk.size_bytes, binary=True))
+        capacity_value.setObjectName("legendValue")
 
-        for fs in filesystems:
-            self._layout.addWidget(DiskLegendItem(fs.value, filesystem_color(fs)))
+        self._meta_layout.addWidget(disk_name)
+        self._meta_layout.addWidget(disk_value)
+        self._meta_layout.addSpacing(12)
+        self._meta_layout.addWidget(capacity_name)
+        self._meta_layout.addWidget(capacity_value)
 
         if disk.unallocated_bytes > 0:
-            self._layout.addWidget(DiskLegendItem("Unallocated", QColor(235, 235, 235)))
+            unalloc_value = QLabel(humanize.naturalsize(disk.unallocated_bytes, binary=True))
+            unalloc_value.setObjectName("legendValue")
+            unalloc_title = QLabel("Unallocated:")
+            unalloc_title.setObjectName("legendTitle")
+            self._meta_layout.addSpacing(12)
+            self._meta_layout.addWidget(unalloc_title)
+            self._meta_layout.addWidget(unalloc_value)
 
-        self._layout.addStretch()
+        self._meta_layout.addStretch()
+
+        for partition in disk.partitions:
+            label = partition.label or partition.mountpoint or f"Partition {partition.number}"
+            size_text = humanize.naturalsize(partition.size_bytes, binary=True)
+            meta = f"{partition.filesystem.value} • {size_text}"
+            if partition.mountpoint and partition.label:
+                meta = f"{meta} • {partition.mountpoint}"
+            self._items_layout.insertWidget(
+                self._items_layout.count() - 1,
+                DiskLegendItem(label, meta, filesystem_color(partition.filesystem)),
+            )
+
+        if disk.unallocated_bytes > 0:
+            size_text = humanize.naturalsize(disk.unallocated_bytes, binary=True)
+            self._items_layout.insertWidget(
+                self._items_layout.count() - 1,
+                DiskLegendItem("Unallocated", size_text, QColor(220, 220, 220)),
+            )
 
 
 class DiskMapWidget(QWidget):
