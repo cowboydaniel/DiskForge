@@ -53,6 +53,16 @@ from diskforge.ui.views.wizards import (
     CreateBackupWizard,
     RestoreBackupWizard,
     RescueMediaWizard,
+    ResizeMovePartitionWizard,
+    MergePartitionsWizard,
+    SplitPartitionWizard,
+    ExtendPartitionWizard,
+    ShrinkPartitionWizard,
+    WipeWizard,
+    PartitionRecoveryWizard,
+    Align4KWizard,
+    ConvertPartitionStyleWizard,
+    SystemMigrationWizard,
 )
 
 
@@ -104,6 +114,16 @@ class MainWindow(QMainWindow):
             "create_partition": QAction("Create Partition...", self),
             "format_partition": QAction("Format Partition...", self),
             "delete_partition": QAction("Delete Partition...", self),
+            "resize_move_partition": QAction("Resize/Move Partition...", self),
+            "merge_partitions": QAction("Merge Partitions...", self),
+            "split_partition": QAction("Split Partition...", self),
+            "extend_partition": QAction("Extend Partition...", self),
+            "shrink_partition": QAction("Shrink Partition...", self),
+            "wipe_device": QAction("Wipe/Secure Erase...", self),
+            "partition_recovery": QAction("Partition Recovery...", self),
+            "align_4k": QAction("Align 4K...", self),
+            "convert_partition_style": QAction("Convert MBR/GPT...", self),
+            "migrate_system": QAction("OS/System Migration...", self),
         }
 
         icon_map = {
@@ -121,6 +141,16 @@ class MainWindow(QMainWindow):
             "create_partition": DiskForgeIcons.CREATE_PARTITION,
             "format_partition": DiskForgeIcons.FORMAT_PARTITION,
             "delete_partition": DiskForgeIcons.DELETE_PARTITION,
+            "resize_move_partition": DiskForgeIcons.CREATE_PARTITION,
+            "merge_partitions": DiskForgeIcons.CREATE_PARTITION,
+            "split_partition": DiskForgeIcons.CREATE_PARTITION,
+            "extend_partition": DiskForgeIcons.CREATE_PARTITION,
+            "shrink_partition": DiskForgeIcons.FORMAT_PARTITION,
+            "wipe_device": DiskForgeIcons.DELETE_PARTITION,
+            "partition_recovery": DiskForgeIcons.RESTORE_BACKUP,
+            "align_4k": DiskForgeIcons.CREATE_PARTITION,
+            "convert_partition_style": DiskForgeIcons.CLONE_DISK,
+            "migrate_system": DiskForgeIcons.CLONE_DISK,
         }
 
         for action_key, icon_name in icon_map.items():
@@ -142,6 +172,16 @@ class MainWindow(QMainWindow):
         actions["create_partition"].triggered.connect(self._on_create_partition)
         actions["format_partition"].triggered.connect(self._on_format_partition)
         actions["delete_partition"].triggered.connect(self._on_delete_partition)
+        actions["resize_move_partition"].triggered.connect(self._on_resize_move_partition)
+        actions["merge_partitions"].triggered.connect(self._on_merge_partitions)
+        actions["split_partition"].triggered.connect(self._on_split_partition)
+        actions["extend_partition"].triggered.connect(self._on_extend_partition)
+        actions["shrink_partition"].triggered.connect(self._on_shrink_partition)
+        actions["wipe_device"].triggered.connect(self._on_wipe_device)
+        actions["partition_recovery"].triggered.connect(self._on_partition_recovery)
+        actions["align_4k"].triggered.connect(self._on_align_4k)
+        actions["convert_partition_style"].triggered.connect(self._on_convert_partition_style)
+        actions["migrate_system"].triggered.connect(self._on_migrate_system)
         actions["clone"].triggered.connect(self._on_clone_disk)
         actions["backup"].triggered.connect(self._on_create_backup)
 
@@ -178,6 +218,48 @@ class MainWindow(QMainWindow):
                 RibbonGroup(
                     "Safety",
                     columns=[[RibbonButton(self._actions["danger_mode"], size="small")]],
+                ),
+            ],
+        )
+        ribbon.add_tab(
+            "Advanced",
+            [
+                RibbonGroup(
+                    "Resize",
+                    columns=[
+                        [RibbonButton(self._actions["resize_move_partition"])],
+                        [
+                            RibbonButton(self._actions["extend_partition"], size="small"),
+                            RibbonButton(self._actions["shrink_partition"], size="small"),
+                        ],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Partition Tools",
+                    columns=[
+                        [RibbonButton(self._actions["merge_partitions"])],
+                        [
+                            RibbonButton(self._actions["split_partition"], size="small"),
+                            RibbonButton(self._actions["align_4k"], size="small"),
+                        ],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Disk Tools",
+                    columns=[
+                        [RibbonButton(self._actions["convert_partition_style"])],
+                        [
+                            RibbonButton(self._actions["wipe_device"], size="small"),
+                            RibbonButton(self._actions["partition_recovery"], size="small"),
+                        ],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Migration",
+                    columns=[[RibbonButton(self._actions["migrate_system"])]],
                 ),
             ],
         )
@@ -621,6 +703,32 @@ class MainWindow(QMainWindow):
             )
             create_part_action.triggered.connect(lambda: self._create_partition(item))
 
+            menu.addSeparator()
+
+            convert_action = menu.addAction(
+                self._actions["convert_partition_style"].icon(),
+                "Convert MBR/GPT...",
+            )
+            convert_action.triggered.connect(lambda: self._convert_partition_style(item))
+
+            wipe_action = menu.addAction(
+                self._actions["wipe_device"].icon(),
+                "Wipe/Secure Erase...",
+            )
+            wipe_action.triggered.connect(self._on_wipe_device)
+
+            migrate_action = menu.addAction(
+                self._actions["migrate_system"].icon(),
+                "OS/System Migration...",
+            )
+            migrate_action.triggered.connect(lambda: self._migrate_system(item))
+
+            recovery_action = menu.addAction(
+                self._actions["partition_recovery"].icon(),
+                "Partition Recovery...",
+            )
+            recovery_action.triggered.connect(self._on_partition_recovery)
+
         elif isinstance(item, Partition):
             clone_action = menu.addAction(
                 self._actions["clone_partition"].icon(),
@@ -647,6 +755,50 @@ class MainWindow(QMainWindow):
                 "Delete",
             )
             delete_action.triggered.connect(lambda: self._delete_partition(item))
+
+            menu.addSeparator()
+
+            resize_action = menu.addAction(
+                self._actions["resize_move_partition"].icon(),
+                "Resize/Move...",
+            )
+            resize_action.triggered.connect(lambda: self._resize_move_partition(item))
+
+            extend_action = menu.addAction(
+                self._actions["extend_partition"].icon(),
+                "Extend...",
+            )
+            extend_action.triggered.connect(lambda: self._extend_partition(item))
+
+            shrink_action = menu.addAction(
+                self._actions["shrink_partition"].icon(),
+                "Shrink...",
+            )
+            shrink_action.triggered.connect(lambda: self._shrink_partition(item))
+
+            split_action = menu.addAction(
+                self._actions["split_partition"].icon(),
+                "Split...",
+            )
+            split_action.triggered.connect(lambda: self._split_partition(item))
+
+            merge_action = menu.addAction(
+                self._actions["merge_partitions"].icon(),
+                "Merge...",
+            )
+            merge_action.triggered.connect(self._on_merge_partitions)
+
+            align_action = menu.addAction(
+                self._actions["align_4k"].icon(),
+                "Align 4K...",
+            )
+            align_action.triggered.connect(lambda: self._align_partition(item))
+
+            wipe_action = menu.addAction(
+                self._actions["wipe_device"].icon(),
+                "Wipe/Secure Erase...",
+            )
+            wipe_action.triggered.connect(self._on_wipe_device)
 
         menu.exec(self._disk_tree.mapToGlobal(pos))
 
@@ -688,6 +840,15 @@ class MainWindow(QMainWindow):
             )
             return False
         return True
+
+    def _find_parent_disk(self, partition: Partition) -> Disk | None:
+        """Find the parent disk for a partition."""
+        inventory = self._disk_model.getInventory()
+        if inventory:
+            for disk in inventory.disks:
+                if partition in disk.partitions:
+                    return disk
+        return None
 
     def _on_create_partition(self) -> None:
         """Handle create partition action."""
@@ -787,6 +948,323 @@ class MainWindow(QMainWindow):
         wizard = DeletePartitionWizard(
             self._session,
             partition,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_resize_move_partition(self) -> None:
+        """Handle resize/move partition action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Partition):
+            self._resize_move_partition(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a partition, not a disk.")
+
+    def _resize_move_partition(self, partition: Partition) -> None:
+        """Resize or move a partition."""
+        if not self._check_danger_mode():
+            return
+
+        if partition.is_mounted:
+            QMessageBox.critical(
+                self,
+                "Partition Mounted",
+                f"Partition is mounted at {partition.mountpoint}. Unmount it first.",
+            )
+            return
+
+        wizard = ResizeMovePartitionWizard(
+            self._session,
+            partition,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_merge_partitions(self) -> None:
+        """Handle merge partitions action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk or partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        disk = item if isinstance(item, Disk) else self._find_parent_disk(item) if isinstance(item, Partition) else None
+        if not disk:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk or partition.")
+            return
+
+        if len(disk.partitions) < 2:
+            QMessageBox.warning(self, "Not Enough Partitions", "Select a disk with at least two partitions.")
+            return
+
+        if not self._check_danger_mode():
+            return
+
+        wizard = MergePartitionsWizard(
+            self._session,
+            disk.partitions,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_split_partition(self) -> None:
+        """Handle split partition action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Partition):
+            self._split_partition(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a partition, not a disk.")
+
+    def _split_partition(self, partition: Partition) -> None:
+        """Split a partition."""
+        if not self._check_danger_mode():
+            return
+
+        if partition.is_mounted:
+            QMessageBox.critical(
+                self,
+                "Partition Mounted",
+                f"Partition is mounted at {partition.mountpoint}. Unmount it first.",
+            )
+            return
+
+        wizard = SplitPartitionWizard(
+            self._session,
+            partition,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_extend_partition(self) -> None:
+        """Handle extend partition action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Partition):
+            self._extend_partition(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a partition, not a disk.")
+
+    def _extend_partition(self, partition: Partition) -> None:
+        """Extend a partition."""
+        if not self._check_danger_mode():
+            return
+
+        if partition.is_mounted:
+            QMessageBox.critical(
+                self,
+                "Partition Mounted",
+                f"Partition is mounted at {partition.mountpoint}. Unmount it first.",
+            )
+            return
+
+        wizard = ExtendPartitionWizard(
+            self._session,
+            partition,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_shrink_partition(self) -> None:
+        """Handle shrink partition action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Partition):
+            self._shrink_partition(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a partition, not a disk.")
+
+    def _shrink_partition(self, partition: Partition) -> None:
+        """Shrink a partition."""
+        if not self._check_danger_mode():
+            return
+
+        if partition.is_mounted:
+            QMessageBox.critical(
+                self,
+                "Partition Mounted",
+                f"Partition is mounted at {partition.mountpoint}. Unmount it first.",
+            )
+            return
+
+        wizard = ShrinkPartitionWizard(
+            self._session,
+            partition,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_wipe_device(self) -> None:
+        """Handle wipe/secure erase action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk or partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if not self._check_danger_mode():
+            return
+
+        if isinstance(item, Disk):
+            if item.is_system_disk:
+                QMessageBox.critical(self, "System Disk", "Cannot wipe the system disk.")
+                return
+            target_path = item.device_path
+        elif isinstance(item, Partition):
+            if item.is_mounted:
+                QMessageBox.critical(
+                    self,
+                    "Partition Mounted",
+                    f"Partition is mounted at {item.mountpoint}. Unmount it first.",
+                )
+                return
+            target_path = item.device_path
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk or partition.")
+            return
+
+        wizard = WipeWizard(
+            self._session,
+            target_path,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_partition_recovery(self) -> None:
+        """Handle partition recovery action."""
+        inventory = self._disk_model.getInventory()
+        if not inventory or not inventory.disks:
+            QMessageBox.warning(self, "No Disks", "No disks available for recovery.")
+            return
+
+        wizard = PartitionRecoveryWizard(
+            self._session,
+            inventory.disks,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_align_4k(self) -> None:
+        """Handle align 4K action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Partition):
+            self._align_partition(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a partition, not a disk.")
+
+    def _align_partition(self, partition: Partition) -> None:
+        """Align a partition to 4K boundaries."""
+        if not self._check_danger_mode():
+            return
+
+        wizard = Align4KWizard(
+            self._session,
+            partition,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_convert_partition_style(self) -> None:
+        """Handle convert partition style action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Disk):
+            self._convert_partition_style(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+
+    def _convert_partition_style(self, disk: Disk) -> None:
+        """Convert disk partition style."""
+        if not self._check_danger_mode():
+            return
+
+        if disk.is_system_disk:
+            QMessageBox.critical(self, "System Disk", "Cannot convert the system disk.")
+            return
+
+        wizard = ConvertPartitionStyleWizard(
+            self._session,
+            disk,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_migrate_system(self) -> None:
+        """Handle OS/system migration action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a source disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Disk):
+            self._migrate_system(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+
+    def _migrate_system(self, source: Disk) -> None:
+        """Migrate OS/system to another disk."""
+        if not self._check_danger_mode():
+            return
+
+        if not source.is_system_disk:
+            QMessageBox.warning(self, "Not a System Disk", "Select the system disk as the source.")
+            return
+
+        inventory = self._disk_model.getInventory()
+        if not inventory:
+            return
+
+        target_disks = [
+            d
+            for d in inventory.disks
+            if d.device_path != source.device_path and not d.is_system_disk
+        ]
+
+        if not target_disks:
+            QMessageBox.warning(self, "No Target", "No suitable target disks available.")
+            return
+
+        wizard = SystemMigrationWizard(
+            self._session,
+            source,
+            target_disks,
             self._status_label.setText,
             self,
         )

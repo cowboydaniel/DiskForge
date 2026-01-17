@@ -19,6 +19,14 @@ if TYPE_CHECKING:
         ImageInfo,
         Partition,
         PartitionCreateOptions,
+        AlignOptions,
+        ConvertDiskOptions,
+        MergePartitionsOptions,
+        MigrationOptions,
+        PartitionRecoveryOptions,
+        ResizeMoveOptions,
+        SplitPartitionOptions,
+        WipeOptions,
     )
     from diskforge.core.job import JobContext
 
@@ -132,6 +140,128 @@ class PlatformBackend(ABC):
     ) -> tuple[bool, str]:
         """
         Resize a partition.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def resize_move_partition(
+        self,
+        options: ResizeMoveOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Resize or move a partition.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def merge_partitions(
+        self,
+        options: MergePartitionsOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Merge two partitions.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def split_partition(
+        self,
+        options: SplitPartitionOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Split a partition into two.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def extend_partition(
+        self,
+        partition_path: str,
+        new_size_bytes: int,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Extend a partition.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def shrink_partition(
+        self,
+        partition_path: str,
+        new_size_bytes: int,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Shrink a partition.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def wipe_device(
+        self,
+        options: WipeOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Wipe a disk or partition.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def recover_partitions(
+        self,
+        options: PartitionRecoveryOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """
+        Attempt to recover partitions on a disk.
+        Returns (success, message/error, artifacts).
+        """
+
+    @abstractmethod
+    def align_partition_4k(
+        self,
+        options: AlignOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Align a partition to 4K boundaries.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def convert_disk_partition_style(
+        self,
+        options: ConvertDiskOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Convert disk partition style (MBR/GPT).
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def migrate_system(
+        self,
+        options: MigrationOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Migrate OS/system to another disk.
         Returns (success, message/error).
         """
 

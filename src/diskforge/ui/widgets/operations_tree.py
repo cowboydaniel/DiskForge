@@ -69,6 +69,12 @@ class OperationsTreeWidget(QTreeView):
                     self._icon("edit-clear", QStyle.SP_DialogResetButton),
                 ),
                 ("Delete Partition", "delete_partition", self._icon("edit-delete", QStyle.SP_TrashIcon)),
+                ("Resize/Move", "resize_move_partition", self._icon("transform-move", QStyle.SP_ArrowUp)),
+                ("Extend", "extend_partition", self._icon("zoom-in", QStyle.SP_ArrowUp)),
+                ("Shrink", "shrink_partition", self._icon("zoom-out", QStyle.SP_ArrowDown)),
+                ("Merge", "merge_partitions", self._icon("list-add", QStyle.SP_FileDialogNewFolder)),
+                ("Split", "split_partition", self._icon("list-remove", QStyle.SP_TrashIcon)),
+                ("Align 4K", "align_4k", self._icon("view-refresh", QStyle.SP_BrowserReload)),
             ],
         )
 
@@ -86,6 +92,10 @@ class OperationsTreeWidget(QTreeView):
             tools_icon,
             [
                 ("Refresh", "refresh", self._icon("view-refresh", QStyle.SP_BrowserReload)),
+                ("Wipe/Secure Erase", "wipe_device", self._icon("edit-delete", QStyle.SP_TrashIcon)),
+                ("Partition Recovery", "partition_recovery", self._icon("edit-undo", QStyle.SP_ArrowBack)),
+                ("Convert MBR/GPT", "convert_partition_style", self._icon("object-flip-horizontal", QStyle.SP_ArrowRight)),
+                ("OS/System Migration", "migrate_system", self._icon("system-run", QStyle.SP_MediaPlay)),
                 (
                     "Make Bootable Media",
                     "rescue_media",

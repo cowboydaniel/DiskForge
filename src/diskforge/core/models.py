@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
+from pathlib import Path
 from typing import Any
 
 
@@ -353,3 +354,76 @@ class FormatOptions:
     label: str | None = None
     quick: bool = True
     force: bool = False
+
+
+@dataclass
+class ResizeMoveOptions:
+    """Options for resizing or moving a partition."""
+
+    partition_path: str
+    new_size_bytes: int | None = None
+    new_start_sector: int | None = None
+    align_to_mb: int = 1
+
+
+@dataclass
+class MergePartitionsOptions:
+    """Options for merging two partitions."""
+
+    primary_partition_path: str
+    secondary_partition_path: str
+
+
+@dataclass
+class SplitPartitionOptions:
+    """Options for splitting a partition into two."""
+
+    partition_path: str
+    split_size_bytes: int
+    filesystem: FileSystem | None = None
+    label: str | None = None
+    align_to_mb: int = 1
+
+
+@dataclass
+class WipeOptions:
+    """Options for wiping a disk or partition."""
+
+    target_path: str
+    method: str = "zero"
+    passes: int = 1
+
+
+@dataclass
+class PartitionRecoveryOptions:
+    """Options for partition recovery."""
+
+    disk_path: str
+    output_path: Path | None = None
+    quick_scan: bool = True
+
+
+@dataclass
+class AlignOptions:
+    """Options for alignment operations."""
+
+    partition_path: str
+    alignment_bytes: int = 4096
+
+
+@dataclass
+class ConvertDiskOptions:
+    """Options for converting disk partition style."""
+
+    disk_path: str
+    target_style: PartitionStyle
+
+
+@dataclass
+class MigrationOptions:
+    """Options for OS/system migration."""
+
+    source_disk_path: str
+    target_disk_path: str
+    include_data: bool = True
+    resize_target: bool = True
