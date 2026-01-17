@@ -25,6 +25,10 @@ from diskforge.ui.views.wizards.operations import (
     DefragPartitionWizard,
     Align4KWizard,
     ConvertPartitionStyleWizard,
+    ConvertSystemPartitionStyleWizard,
+    ConvertFilesystemWizard,
+    ConvertPartitionRoleWizard,
+    ConvertDiskLayoutWizard,
     SystemMigrationWizard,
 )
 
@@ -53,5 +57,9 @@ __all__ = [
     "DefragPartitionWizard",
     "Align4KWizard",
     "ConvertPartitionStyleWizard",
+    "ConvertSystemPartitionStyleWizard",
+    "ConvertFilesystemWizard",
+    "ConvertPartitionRoleWizard",
+    "ConvertDiskLayoutWizard",
     "SystemMigrationWizard",
 ]

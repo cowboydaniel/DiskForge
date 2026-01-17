@@ -26,6 +26,7 @@ from diskforge.core.models import (
     CompressionLevel,
     Disk,
     DiskInventory,
+    DiskLayout,
     FileSystem,
     ImageInfo,
     Partition,
@@ -43,6 +44,10 @@ if TYPE_CHECKING:
     from diskforge.core.models import (
         AlignOptions,
         ConvertDiskOptions,
+        ConvertDiskLayoutOptions,
+        ConvertFilesystemOptions,
+        ConvertPartitionRoleOptions,
+        ConvertSystemDiskOptions,
         FormatOptions,
         MergePartitionsOptions,
         MigrationOptions,
@@ -738,6 +743,160 @@ class WindowsBackend(PlatformBackend):
             return True, f"Converted disk {disk_number} to GPT"
 
         return False, "GPT to MBR conversion is not supported in the Windows backend"
+
+    def convert_system_disk_partition_style(
+        self,
+        options: ConvertSystemDiskOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Convert system disk partition style with safety checks."""
+        disk = self.get_disk_info(options.disk_path)
+        if not disk:
+            return False, f"Disk not found: {options.disk_path}"
+
+        if not disk.is_system_disk:
+            return False, "Selected disk is not marked as a system disk"
+
+        if disk.partition_style == options.target_style:
+            return True, f"Disk already uses {options.target_style.name}"
+
+        if options.target_style != PartitionStyle.GPT:
+            return False, "System disk conversion to MBR is not supported"
+
+        disk_number = self._extract_disk_number(options.disk_path)
+        if disk_number is None:
+            return False, f"Cannot parse disk number from: {options.disk_path}"
+
+        allow_flag = ["/allowFullOS"] if options.allow_full_os else []
+
+        if context:
+            context.update_progress(message=f"Validating system disk {disk_number} for GPT conversion")
+
+        if dry_run:
+            return True, f"Would validate and convert system disk {disk_number} to GPT"
+
+        validate_cmd = ["mbr2gpt", "/validate", f"/disk:{disk_number}", *allow_flag]
+        validate_result = self.run_command(validate_cmd, timeout=600, check=False)
+        if not validate_result.success:
+            return False, f"MBR2GPT validation failed: {validate_result.stderr}"
+
+        if context:
+            context.update_progress(message=f"Converting system disk {disk_number} to GPT")
+
+        convert_cmd = ["mbr2gpt", "/convert", f"/disk:{disk_number}", *allow_flag]
+        result = self.run_command(convert_cmd, timeout=600, check=False)
+        if not result.success:
+            return False, f"MBR2GPT failed: {result.stderr}"
+        return True, f"Converted system disk {disk_number} to GPT"
+
+    def convert_partition_filesystem(
+        self,
+        options: ConvertFilesystemOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Convert a partition filesystem (NTFS/FAT32)."""
+        partition = self.get_partition_info(options.partition_path)
+        if not partition:
+            return False, f"Partition not found: {options.partition_path}"
+
+        if partition.is_system:
+            return False, "Cannot convert the system partition filesystem"
+
+        current_fs = partition.filesystem
+        target_fs = options.target_filesystem
+
+        if current_fs == target_fs:
+            return True, f"Partition already uses {target_fs.value}"
+
+        drive_letter = self._get_drive_letter(partition)
+        if not drive_letter:
+            return False, "Partition must have a drive letter to convert the filesystem"
+
+        if target_fs == FileSystem.NTFS:
+            if current_fs not in {FileSystem.FAT32, FileSystem.FAT16}:
+                return False, "Only FAT32/FAT16 to NTFS conversion is supported"
+            cmd = ["cmd", "/c", "convert", f"{drive_letter}:", "/fs:ntfs", "/nosecurity"]
+            if context:
+                context.update_progress(message=f"Converting {drive_letter}: to NTFS")
+            if dry_run:
+                return True, f"Would run: {' '.join(cmd)}"
+            result = self.run_command(cmd, timeout=3600, check=False)
+            if not result.success:
+                return False, f"Convert failed: {result.stderr}"
+            return True, f"Converted {drive_letter}: to NTFS"
+
+        if target_fs == FileSystem.FAT32:
+            if current_fs != FileSystem.NTFS:
+                return False, "Only NTFS to FAT32 conversion is supported"
+            if not options.allow_format:
+                return False, "NTFS to FAT32 requires formatting; re-run with allow_format"
+            cmd = ["cmd", "/c", "format", f"{drive_letter}:", "/fs:FAT32", "/q", "/y"]
+            if context:
+                context.update_progress(message=f"Formatting {drive_letter}: as FAT32")
+            if dry_run:
+                return True, f"Would run: {' '.join(cmd)}"
+            result = self.run_command(cmd, timeout=3600, check=False)
+            if not result.success:
+                return False, f"Format failed: {result.stderr}"
+            return True, f"Formatted {drive_letter}: as FAT32"
+
+        return False, "Unsupported target filesystem"
+
+    def convert_partition_role(
+        self,
+        options: ConvertPartitionRoleOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Convert a partition between primary/logical."""
+        inventory = self.get_disk_inventory()
+        result = inventory.get_partition_by_path(options.partition_path)
+        if not result:
+            return False, f"Partition not found: {options.partition_path}"
+
+        disk, partition = result
+        if disk.partition_style != PartitionStyle.MBR:
+            return False, "Primary/logical conversion is only supported on MBR disks"
+
+        if disk.is_system_disk:
+            return False, "Cannot convert partition role on the system disk"
+
+        return False, "Primary/logical conversion is not supported in the Windows backend"
+
+    def convert_disk_layout(
+        self,
+        options: ConvertDiskLayoutOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Convert disk layout between basic/dynamic."""
+        disk = self.get_disk_info(options.disk_path)
+        if not disk:
+            return False, f"Disk not found: {options.disk_path}"
+
+        if disk.is_system_disk:
+            return False, "Cannot convert the system disk layout"
+
+        disk_number = self._extract_disk_number(options.disk_path)
+        if disk_number is None:
+            return False, f"Cannot parse disk number from: {options.disk_path}"
+
+        target = "dynamic" if options.target_layout == DiskLayout.DYNAMIC else "basic"
+
+        if context:
+            context.update_progress(message=f"Converting disk {disk_number} to {target}")
+
+        if dry_run:
+            return True, f"Would convert disk {disk_number} to {target}"
+
+        script = f\"select disk {disk_number}\\nconvert {target}\\n\"
+        result = self._run_diskpart(script)
+        if not result.success:
+            return False, f"Disk layout conversion failed: {result.stderr}"
+
+        return True, f"Converted disk {disk_number} to {target}"
 
     def migrate_system(
         self,

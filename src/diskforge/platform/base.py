@@ -23,6 +23,10 @@ if TYPE_CHECKING:
         PartitionCreateOptions,
         AlignOptions,
         ConvertDiskOptions,
+        ConvertDiskLayoutOptions,
+        ConvertFilesystemOptions,
+        ConvertPartitionRoleOptions,
+        ConvertSystemDiskOptions,
         MergePartitionsOptions,
         MigrationOptions,
         AllocateFreeSpaceOptions,
@@ -317,6 +321,54 @@ class PlatformBackend(ABC):
     ) -> tuple[bool, str]:
         """
         Convert disk partition style (MBR/GPT).
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def convert_system_disk_partition_style(
+        self,
+        options: ConvertSystemDiskOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Convert system disk partition style (MBR/GPT) with safety checks.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def convert_partition_filesystem(
+        self,
+        options: ConvertFilesystemOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Convert a partition filesystem (NTFS/FAT32).
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def convert_partition_role(
+        self,
+        options: ConvertPartitionRoleOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Convert a partition between primary/logical.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def convert_disk_layout(
+        self,
+        options: ConvertDiskLayoutOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Convert a disk between basic/dynamic.
         Returns (success, message/error).
         """
 

@@ -35,6 +35,21 @@ class PartitionStyle(Enum):
     UNKNOWN = auto()
 
 
+class PartitionRole(Enum):
+    """Partition role for MBR partitioning."""
+
+    PRIMARY = auto()
+    LOGICAL = auto()
+
+
+class DiskLayout(Enum):
+    """Disk layout type (basic vs dynamic)."""
+
+    BASIC = auto()
+    DYNAMIC = auto()
+    UNKNOWN = auto()
+
+
 class FileSystem(Enum):
     """File system types."""
 
@@ -447,6 +462,40 @@ class ConvertDiskOptions:
 
     disk_path: str
     target_style: PartitionStyle
+
+
+@dataclass
+class ConvertSystemDiskOptions:
+    """Options for converting a system disk partition style."""
+
+    disk_path: str
+    target_style: PartitionStyle
+    allow_full_os: bool = True
+
+
+@dataclass
+class ConvertFilesystemOptions:
+    """Options for converting a partition filesystem."""
+
+    partition_path: str
+    target_filesystem: FileSystem
+    allow_format: bool = False
+
+
+@dataclass
+class ConvertPartitionRoleOptions:
+    """Options for converting a partition between primary/logical."""
+
+    partition_path: str
+    target_role: PartitionRole
+
+
+@dataclass
+class ConvertDiskLayoutOptions:
+    """Options for converting a disk between basic/dynamic."""
+
+    disk_path: str
+    target_layout: DiskLayout
 
 
 @dataclass
