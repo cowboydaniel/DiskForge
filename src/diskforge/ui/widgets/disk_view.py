@@ -70,6 +70,16 @@ def gradient_qss(color: QColor) -> str:
     )
 
 
+def partition_short_label(partition: Partition) -> str:
+    """Return a short label for a partition."""
+    if partition.mountpoint:
+        mountpoint = partition.mountpoint.rstrip("\\/")
+        return mountpoint or partition.mountpoint
+    if partition.label:
+        return partition.label
+    return f"P{partition.number}"
+
+
 class PartitionRectItem(QGraphicsRectItem):
     """Graphics item representing a partition."""
 
@@ -312,6 +322,222 @@ class DiskGraphicsView(QGraphicsView):
         item = self.itemAt(event.pos())
         if isinstance(item, PartitionRectItem):
             self.partitionSelected.emit(item.partition)
+
+
+class DiskStripPartitionItem(QGraphicsRectItem):
+    """Graphics item for a partition strip with usage bar."""
+
+    def __init__(
+        self,
+        partition: Partition,
+        rect: QRectF,
+        parent: QGraphicsItem | None = None,
+    ) -> None:
+        super().__init__(rect, parent)
+        self.partition = partition
+        self._base_color = filesystem_color(partition.filesystem)
+        self._border_pen = QPen(QColor(78, 92, 124), 1)
+        self._label = partition_short_label(partition)
+
+        used = partition.used_space_bytes
+        free = partition.free_space_bytes
+        total = None
+        if used is not None and free is not None:
+            total = used + free
+        if total:
+            self._usage_ratio = max(0.0, min(1.0, used / total))
+        else:
+            self._usage_ratio = None
+
+    def _partition_gradient(self, rect: QRectF) -> QBrush:
+        gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        gradient.setColorAt(0.0, self._base_color.lighter(130))
+        gradient.setColorAt(1.0, self._base_color.darker(120))
+        return QBrush(gradient)
+
+    def paint(self, painter: QPainter, option: QGraphicsItem, widget: QWidget | None = None) -> None:
+        rect = self.rect()
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        painter.setPen(self._border_pen)
+        painter.setBrush(self._partition_gradient(rect))
+        painter.drawRoundedRect(rect, 2, 2)
+
+        if self._usage_ratio is not None:
+            bar_height = min(max(rect.height() * 0.28, 4), 6)
+            bar_rect = QRectF(
+                rect.left() + 2,
+                rect.bottom() - bar_height - 2,
+                rect.width() - 4,
+                bar_height,
+            )
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(self._base_color.lighter(150))
+            painter.drawRoundedRect(bar_rect, 1.5, 1.5)
+
+            used_rect = QRectF(bar_rect)
+            used_rect.setWidth(bar_rect.width() * self._usage_ratio)
+            if used_rect.width() > 0:
+                painter.setBrush(self._base_color.darker(130))
+                painter.drawRoundedRect(used_rect, 1.5, 1.5)
+
+        text_width = rect.width() - 6
+        if text_width > 12 and self._label:
+            font = QFont("Segoe UI", 7)
+            metrics = QFontMetrics(font)
+            label = metrics.elidedText(self._label, Qt.ElideRight, int(text_width))
+            painter.setFont(font)
+            painter.setPen(Qt.white if is_dark_color(self._base_color) else QColor(25, 25, 25))
+            text_rect = QRectF(rect.left() + 3, rect.top() + 2, text_width, rect.height() - 4)
+            painter.drawText(text_rect, Qt.AlignCenter, label)
+
+
+class DiskStripGraphicsView(QGraphicsView):
+    """Graphics view for a single disk strip."""
+
+    def __init__(self, parent: QGraphicsView | None = None) -> None:
+        super().__init__(parent)
+        self._scene = QGraphicsScene(self)
+        self.setScene(self._scene)
+        self.setMinimumHeight(40)
+        self.setMaximumHeight(44)
+
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setRenderHint(QPainter.Antialiasing, True)
+
+        self._disk: Disk | None = None
+
+    def setDisk(self, disk: Disk | None) -> None:
+        """Set the disk to display."""
+        self._disk = disk
+        self._scene.clear()
+        if disk is None:
+            return
+        self._draw_strip()
+
+    def _draw_strip(self) -> None:
+        if self._disk is None:
+            return
+
+        width = max(self.viewport().width() - 12, 60)
+        height = 22
+        x_offset = 6
+        y_offset = 6
+
+        total_size = self._disk.size_bytes
+        if total_size == 0:
+            return
+
+        current_x = x_offset
+        min_width = 16
+        widths = []
+        for partition in self._disk.partitions:
+            part_width = (partition.size_bytes / total_size) * width
+            widths.append(max(part_width, min_width))
+
+        unalloc_width = 0.0
+        if self._disk.unallocated_bytes > 0:
+            unalloc_width = (self._disk.unallocated_bytes / total_size) * width
+            unalloc_width = max(unalloc_width, min_width)
+
+        total_width = sum(widths) + unalloc_width
+        if total_width > width:
+            scale = width / total_width
+            widths = [max(w * scale, 6) for w in widths]
+            unalloc_width = max(unalloc_width * scale, 6) if unalloc_width else 0.0
+
+        for partition, part_width in zip(self._disk.partitions, widths, strict=False):
+            if part_width <= 0:
+                continue
+            rect = QRectF(current_x, y_offset, part_width - 2, height)
+            part_item = DiskStripPartitionItem(partition, rect)
+            self._scene.addItem(part_item)
+            current_x += part_width
+
+        if self._disk.unallocated_bytes > 0 and unalloc_width > 3:
+            unalloc_rect = self._scene.addRect(
+                current_x,
+                y_offset,
+                unalloc_width - 2,
+                height,
+                QPen(QColor(140, 140, 140), 1, Qt.DashLine),
+                QBrush(QColor(235, 235, 235)),
+            )
+            unalloc_rect.setZValue(0)
+
+        self.fitInView(self._scene.sceneRect(), Qt.KeepAspectRatio)
+
+    def resizeEvent(self, event: QGraphicsView) -> None:
+        super().resizeEvent(event)
+        self._draw_strip()
+
+
+class DiskStripRow(QWidget):
+    """Row widget for a disk strip with label."""
+
+    def __init__(self, disk: Disk, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(8)
+
+        self._name_label = QLabel(disk.display_name)
+        self._name_label.setObjectName("diskStripLabel")
+        self._name_label.setMinimumWidth(140)
+        self._name_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self._size_label = QLabel(humanize.naturalsize(disk.size_bytes, binary=True))
+        self._size_label.setObjectName("diskStripSize")
+        self._size_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self._strip_view = DiskStripGraphicsView()
+        self._strip_view.setDisk(disk)
+
+        layout.addWidget(self._name_label)
+        layout.addWidget(self._strip_view, 1)
+        layout.addWidget(self._size_label)
+
+    def set_disk(self, disk: Disk) -> None:
+        """Update row data."""
+        self._name_label.setText(disk.display_name)
+        self._size_label.setText(humanize.naturalsize(disk.size_bytes, binary=True))
+        self._strip_view.setDisk(disk)
+
+
+class MultiDiskMapWidget(QWidget):
+    """Widget showing disk map strips for all disks."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("multiDiskMap")
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(6)
+
+        self._empty_label = QLabel("No disks available")
+        self._empty_label.setObjectName("multiDiskMapEmpty")
+        self._layout.addWidget(self._empty_label)
+
+    def _clear_rows(self) -> None:
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                if widget is self._empty_label:
+                    widget.setParent(None)
+                else:
+                    widget.deleteLater()
+
+    def setDisks(self, disks: list[Disk]) -> None:
+        """Set the disks to display."""
+        self._clear_rows()
+        if not disks:
+            self._layout.addWidget(self._empty_label)
+            return
+
+        for disk in disks:
+            row = DiskStripRow(disk)
+            self._layout.addWidget(row)
 
 
 class DiskLegendItem(QWidget):
