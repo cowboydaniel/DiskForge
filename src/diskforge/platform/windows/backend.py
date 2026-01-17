@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Any
 
 from diskforge.core.logging import get_logger
 from diskforge.core.models import (
+    CloneMode,
+    CompressionLevel,
     Disk,
     DiskInventory,
     FileSystem,
@@ -716,9 +718,15 @@ class WindowsBackend(PlatformBackend):
         target_path: str,
         context: JobContext | None = None,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         """Clone a disk block-by-block."""
+        if mode == CloneMode.INTELLIGENT and context:
+            context.add_warning(
+                "Intelligent clone is not supported on Windows; using sector-by-sector copy."
+            )
         source_disk = self.get_disk_info(source_path)
         target_disk = self.get_disk_info(target_path)
 
@@ -764,9 +772,15 @@ class WindowsBackend(PlatformBackend):
         target_path: str,
         context: JobContext | None = None,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         """Clone a partition block-by-block."""
+        if mode == CloneMode.INTELLIGENT and context:
+            context.add_warning(
+                "Intelligent clone is not supported on Windows; using sector-by-sector copy."
+            )
         source_part = self.get_partition_info(source_path)
         target_part = self.get_partition_info(target_path)
 
@@ -914,10 +928,17 @@ class WindowsBackend(PlatformBackend):
         image_path: Path,
         context: JobContext | None = None,
         compression: str | None = "zstd",
+        compression_level: CompressionLevel | None = None,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str, ImageInfo | None]:
         """Create a disk/partition image."""
+        if mode == CloneMode.INTELLIGENT and context:
+            context.add_warning(
+                "Intelligent backup is not supported on Windows; using sector-by-sector capture."
+            )
         source_info = self.get_disk_info(source_path) or self.get_partition_info(source_path)
         if not source_info:
             return False, f"Source not found: {source_path}", None
@@ -927,7 +948,18 @@ class WindowsBackend(PlatformBackend):
         # Windows doesn't have native compression tools like Linux
         # We'll use Python's built-in compression
         compress_func = None
+        compress_kwargs: dict[str, Any] = {}
         image_suffix = ""
+        compression_level_value: int | None = None
+
+        if compression_level:
+            compression_level_value = (
+                1
+                if compression_level == CompressionLevel.FAST
+                else 9
+                if compression_level == CompressionLevel.MAXIMUM
+                else 6
+            )
 
         if compression == "gzip":
             import gzip
@@ -944,6 +976,9 @@ class WindowsBackend(PlatformBackend):
             except ImportError:
                 compression = None
 
+        if compress_func and compression_level_value is not None:
+            compress_kwargs["compresslevel"] = compression_level_value
+
         final_path = Path(str(image_path) + image_suffix) if image_suffix else image_path
 
         if context:
@@ -959,13 +994,13 @@ class WindowsBackend(PlatformBackend):
 
         try:
             start_time = datetime.now()
-            hasher = hashlib.sha256()
+            hasher = hashlib.sha256() if verify else None
             bytes_processed = 0
             block_size = 64 * 1024 * 1024
 
             with open(source_path, "rb") as src:
                 if compress_func:
-                    with compress_func(final_path, "wb") as out:
+                    with compress_func(final_path, "wb", **compress_kwargs) as out:
                         while True:
                             if context:
                                 context.check_cancelled()
@@ -974,7 +1009,8 @@ class WindowsBackend(PlatformBackend):
                             if not data:
                                 break
 
-                            hasher.update(data)
+                            if hasher:
+                                hasher.update(data)
                             out.write(data)
                             bytes_processed += len(data)
 
@@ -996,7 +1032,8 @@ class WindowsBackend(PlatformBackend):
                             if not data:
                                 break
 
-                            hasher.update(data)
+                            if hasher:
+                                hasher.update(data)
                             out.write(data)
                             bytes_processed += len(data)
 
@@ -1017,8 +1054,13 @@ class WindowsBackend(PlatformBackend):
                 image_size_bytes=final_path.stat().st_size,
                 compression=compression if compress_func else None,
                 created_at=start_time,
-                checksum=hasher.hexdigest(),
+                checksum=hasher.hexdigest() if hasher else None,
                 checksum_algorithm="sha256",
+                metadata={
+                    "clone_mode": mode.value,
+                    "schedule": schedule,
+                    "compression_level": compression_level.value if compression_level else None,
+                },
             )
 
             # Write metadata
@@ -1039,6 +1081,7 @@ class WindowsBackend(PlatformBackend):
         target_path: str,
         context: JobContext | None = None,
         verify: bool = True,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         """Restore an image to a disk/partition."""

@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from diskforge.core.models import (
+        CloneMode,
+        CompressionLevel,
         Disk,
         DiskInventory,
         FileSystem,
@@ -274,6 +276,8 @@ class PlatformBackend(ABC):
         target_path: str,
         context: JobContext | None = None,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         """
@@ -288,6 +292,8 @@ class PlatformBackend(ABC):
         target_path: str,
         context: JobContext | None = None,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         """
@@ -304,7 +310,10 @@ class PlatformBackend(ABC):
         image_path: Path,
         context: JobContext | None = None,
         compression: str | None = "zstd",
+        compression_level: CompressionLevel | None = None,
         verify: bool = True,
+        mode: CloneMode = CloneMode.INTELLIGENT,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str, ImageInfo | None]:
         """
@@ -319,6 +328,7 @@ class PlatformBackend(ABC):
         target_path: str,
         context: JobContext | None = None,
         verify: bool = True,
+        schedule: str | None = None,
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         """
