@@ -63,6 +63,13 @@ if TYPE_CHECKING:
         JunkScanResult,
         LargeFileScanResult,
         MoveApplicationResult,
+        BadSectorScanOptions,
+        SurfaceTestOptions,
+        DiskSpeedTestOptions,
+        DiskHealthResult,
+        BadSectorScanResult,
+        SurfaceTestResult,
+        DiskSpeedTestResult,
     )
     from diskforge.core.job import JobContext
 
@@ -670,6 +677,40 @@ class PlatformBackend(ABC):
     @abstractmethod
     def get_smart_info(self, device_path: str) -> dict[str, Any] | None:
         """Get SMART information for a disk."""
+
+    # ==================== Diagnostics Operations ====================
+
+    @abstractmethod
+    def bad_sector_scan(
+        self,
+        options: BadSectorScanOptions,
+        context: JobContext | None = None,
+    ) -> BadSectorScanResult:
+        """Scan a disk for bad sectors."""
+
+    @abstractmethod
+    def disk_health_check(
+        self,
+        device_path: str,
+        context: JobContext | None = None,
+    ) -> DiskHealthResult:
+        """Check disk health status."""
+
+    @abstractmethod
+    def disk_speed_test(
+        self,
+        options: DiskSpeedTestOptions,
+        context: JobContext | None = None,
+    ) -> DiskSpeedTestResult:
+        """Measure disk read speed."""
+
+    @abstractmethod
+    def surface_test(
+        self,
+        options: SurfaceTestOptions,
+        context: JobContext | None = None,
+    ) -> SurfaceTestResult:
+        """Run a surface test on a disk."""
 
     # ==================== Utility Methods ====================
 

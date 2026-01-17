@@ -13,6 +13,13 @@ from diskforge.core.job import Job, JobContext
 from diskforge.core.models import (
     CloneMode,
     CompressionLevel,
+    BadSectorScanOptions,
+    SurfaceTestOptions,
+    DiskSpeedTestOptions,
+    DiskHealthResult,
+    BadSectorScanResult,
+    SurfaceTestResult,
+    DiskSpeedTestResult,
     FileSystem,
     FormatOptions,
     ImageInfo,
@@ -582,6 +589,187 @@ Steps:
 This creates recovery tools for emergency disk operations."""
 
 
+class BadSectorScanJob(Job[BadSectorScanResult]):
+    """Job to scan a disk for bad sectors."""
+
+    def __init__(
+        self,
+        device_path: str,
+        block_size: int = 4096,
+        passes: int = 1,
+    ) -> None:
+        super().__init__(
+            name="bad_sector_scan",
+            description=f"Bad sector scan on {device_path}",
+        )
+        self.device_path = device_path
+        self.block_size = block_size
+        self.passes = passes
+        self._session: Session | None = None
+
+    def set_session(self, session: Session) -> None:
+        self._session = session
+
+    def execute(self, context: JobContext) -> BadSectorScanResult:
+        if self._session is None:
+            raise RuntimeError("Session not set")
+
+        options = BadSectorScanOptions(
+            device_path=self.device_path,
+            block_size=self.block_size,
+            passes=self.passes,
+        )
+        result = self._session.platform.bad_sector_scan(options, context)
+        if not result.success:
+            raise RuntimeError(result.message)
+        return result
+
+    def get_plan(self) -> str:
+        return f"""Bad Sector Scan
+===============
+Device: {self.device_path}
+Block size: {self.block_size} bytes
+Passes: {self.passes}
+
+Steps:
+1. Validate device access
+2. Scan disk blocks for read errors
+3. Report bad sector locations"""
+
+
+class SurfaceTestJob(Job[SurfaceTestResult]):
+    """Job to run a surface test on a disk."""
+
+    def __init__(
+        self,
+        device_path: str,
+        mode: str = "read",
+        block_size: int = 4096,
+        passes: int = 1,
+    ) -> None:
+        super().__init__(
+            name="surface_test",
+            description=f"Surface test on {device_path}",
+        )
+        self.device_path = device_path
+        self.mode = mode
+        self.block_size = block_size
+        self.passes = passes
+        self._session: Session | None = None
+
+    def set_session(self, session: Session) -> None:
+        self._session = session
+
+    def execute(self, context: JobContext) -> SurfaceTestResult:
+        if self._session is None:
+            raise RuntimeError("Session not set")
+
+        options = SurfaceTestOptions(
+            device_path=self.device_path,
+            mode=self.mode,
+            block_size=self.block_size,
+            passes=self.passes,
+        )
+        result = self._session.platform.surface_test(options, context)
+        if not result.success:
+            raise RuntimeError(result.message)
+        return result
+
+    def get_plan(self) -> str:
+        return f"""Surface Test
+============
+Device: {self.device_path}
+Mode: {self.mode}
+Block size: {self.block_size} bytes
+Passes: {self.passes}
+
+Steps:
+1. Validate device access
+2. Run surface test ({self.mode})
+3. Report bad sectors"""
+
+
+class DiskSpeedTestJob(Job[DiskSpeedTestResult]):
+    """Job to measure disk read speed."""
+
+    def __init__(
+        self,
+        device_path: str,
+        sample_size_bytes: int = 256 * 1024 * 1024,
+        block_size_bytes: int = 4 * 1024 * 1024,
+    ) -> None:
+        super().__init__(
+            name="disk_speed_test",
+            description=f"Speed test on {device_path}",
+        )
+        self.device_path = device_path
+        self.sample_size_bytes = sample_size_bytes
+        self.block_size_bytes = block_size_bytes
+        self._session: Session | None = None
+
+    def set_session(self, session: Session) -> None:
+        self._session = session
+
+    def execute(self, context: JobContext) -> DiskSpeedTestResult:
+        if self._session is None:
+            raise RuntimeError("Session not set")
+
+        options = DiskSpeedTestOptions(
+            device_path=self.device_path,
+            sample_size_bytes=self.sample_size_bytes,
+            block_size_bytes=self.block_size_bytes,
+        )
+        result = self._session.platform.disk_speed_test(options, context)
+        if not result.success:
+            raise RuntimeError(result.message)
+        return result
+
+    def get_plan(self) -> str:
+        return f"""Disk Speed Test
+===============
+Device: {self.device_path}
+Sample size: {self.sample_size_bytes} bytes
+Block size: {self.block_size_bytes} bytes
+
+Steps:
+1. Validate device access
+2. Read sample data
+3. Report throughput"""
+
+
+class DiskHealthCheckJob(Job[DiskHealthResult]):
+    """Job to check disk health."""
+
+    def __init__(self, device_path: str) -> None:
+        super().__init__(
+            name="disk_health_check",
+            description=f"Health check on {device_path}",
+        )
+        self.device_path = device_path
+        self._session: Session | None = None
+
+    def set_session(self, session: Session) -> None:
+        self._session = session
+
+    def execute(self, context: JobContext) -> DiskHealthResult:
+        if self._session is None:
+            raise RuntimeError("Session not set")
+
+        result = self._session.platform.disk_health_check(self.device_path, context)
+        if not result.smart_available:
+            raise RuntimeError(result.message)
+        return result
+
+    def get_plan(self) -> str:
+        return f"""Disk Health Check
+=================
+Device: {self.device_path}
+
+Steps:
+1. Query SMART health status
+2. Report health state"""
+
+
 class OperationsPlugin(Plugin):
     """Plugin providing disk operations."""
 
@@ -610,3 +798,7 @@ class OperationsPlugin(Plugin):
             registry.register_job("create_image", CreateImageJob)
             registry.register_job("restore_image", RestoreImageJob)
             registry.register_job("create_rescue_media", CreateRescueMediaJob)
+            registry.register_job("bad_sector_scan", BadSectorScanJob)
+            registry.register_job("surface_test", SurfaceTestJob)
+            registry.register_job("disk_speed_test", DiskSpeedTestJob)
+            registry.register_job("disk_health_check", DiskHealthCheckJob)

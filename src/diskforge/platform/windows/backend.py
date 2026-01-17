@@ -32,6 +32,13 @@ from diskforge.core.models import (
     ImageInfo,
     Partition,
     PartitionStyle,
+    BadSectorScanOptions,
+    SurfaceTestOptions,
+    DiskSpeedTestOptions,
+    DiskHealthResult,
+    BadSectorScanResult,
+    SurfaceTestResult,
+    DiskSpeedTestResult,
 )
 from diskforge.platform.base import CommandResult, PlatformBackend
 from diskforge.platform.file_ops import (
@@ -2496,6 +2503,86 @@ For support: https://diskforge.dev/support
             return json.loads(result.stdout)
         except json.JSONDecodeError:
             return None
+
+    # ==================== Diagnostics Operations ====================
+
+    def bad_sector_scan(
+        self,
+        options: BadSectorScanOptions,
+        context: JobContext | None = None,
+    ) -> BadSectorScanResult:
+        return BadSectorScanResult(
+            device_path=options.device_path,
+            success=False,
+            message="Bad sector scanning is not supported on Windows yet.",
+            bad_sector_count=0,
+            bad_sectors=[],
+            duration_seconds=0.0,
+            block_size=options.block_size,
+            passes=options.passes,
+            tool="",
+        )
+
+    def disk_health_check(
+        self,
+        device_path: str,
+        context: JobContext | None = None,
+    ) -> DiskHealthResult:
+        smart_info = self.get_smart_info(device_path)
+        if smart_info is None:
+            return DiskHealthResult(
+                device_path=device_path,
+                healthy=False,
+                status="UNKNOWN",
+                smart_available=False,
+                temperature_c=None,
+                message="SMART data not available",
+            )
+
+        status = smart_info.get("Status", "Unknown")
+        healthy = status.lower() == "ok"
+        return DiskHealthResult(
+            device_path=device_path,
+            healthy=healthy,
+            status=status,
+            smart_available=True,
+            temperature_c=None,
+            message=f"SMART status: {status}",
+            details=smart_info,
+        )
+
+    def disk_speed_test(
+        self,
+        options: DiskSpeedTestOptions,
+        context: JobContext | None = None,
+    ) -> DiskSpeedTestResult:
+        return DiskSpeedTestResult(
+            device_path=options.device_path,
+            success=False,
+            message="Disk speed tests are not supported on Windows yet.",
+            sample_size_bytes=options.sample_size_bytes,
+            block_size_bytes=options.block_size_bytes,
+            duration_seconds=0.0,
+            read_bytes_per_sec=0.0,
+        )
+
+    def surface_test(
+        self,
+        options: SurfaceTestOptions,
+        context: JobContext | None = None,
+    ) -> SurfaceTestResult:
+        return SurfaceTestResult(
+            device_path=options.device_path,
+            success=False,
+            message="Surface tests are not supported on Windows yet.",
+            mode=options.mode,
+            bad_sector_count=0,
+            bad_sectors=[],
+            duration_seconds=0.0,
+            block_size=options.block_size,
+            passes=options.passes,
+            tool="",
+        )
 
     # ==================== Utility Methods ====================
 

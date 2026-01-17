@@ -659,6 +659,132 @@ class InitializeDiskOptions:
 
 
 @dataclass
+class BadSectorScanOptions:
+    """Options for scanning bad sectors."""
+
+    device_path: str
+    block_size: int = 4096
+    passes: int = 1
+
+
+@dataclass
+class SurfaceTestOptions:
+    """Options for surface testing."""
+
+    device_path: str
+    mode: str = "read"
+    block_size: int = 4096
+    passes: int = 1
+
+
+@dataclass
+class DiskSpeedTestOptions:
+    """Options for disk speed testing."""
+
+    device_path: str
+    sample_size_bytes: int = 256 * 1024 * 1024
+    block_size_bytes: int = 4 * 1024 * 1024
+
+
+@dataclass
+class DiskHealthResult:
+    device_path: str
+    healthy: bool
+    status: str
+    smart_available: bool
+    temperature_c: float | None
+    message: str
+    details: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "device_path": self.device_path,
+            "healthy": self.healthy,
+            "status": self.status,
+            "smart_available": self.smart_available,
+            "temperature_c": self.temperature_c,
+            "message": self.message,
+            "details": self.details,
+        }
+
+
+@dataclass
+class BadSectorScanResult:
+    device_path: str
+    success: bool
+    message: str
+    bad_sector_count: int
+    bad_sectors: list[int]
+    duration_seconds: float
+    block_size: int
+    passes: int
+    tool: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "device_path": self.device_path,
+            "success": self.success,
+            "message": self.message,
+            "bad_sector_count": self.bad_sector_count,
+            "bad_sectors": self.bad_sectors,
+            "duration_seconds": self.duration_seconds,
+            "block_size": self.block_size,
+            "passes": self.passes,
+            "tool": self.tool,
+        }
+
+
+@dataclass
+class SurfaceTestResult:
+    device_path: str
+    success: bool
+    message: str
+    mode: str
+    bad_sector_count: int
+    bad_sectors: list[int]
+    duration_seconds: float
+    block_size: int
+    passes: int
+    tool: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "device_path": self.device_path,
+            "success": self.success,
+            "message": self.message,
+            "mode": self.mode,
+            "bad_sector_count": self.bad_sector_count,
+            "bad_sectors": self.bad_sectors,
+            "duration_seconds": self.duration_seconds,
+            "block_size": self.block_size,
+            "passes": self.passes,
+            "tool": self.tool,
+        }
+
+
+@dataclass
+class DiskSpeedTestResult:
+    device_path: str
+    success: bool
+    message: str
+    sample_size_bytes: int
+    block_size_bytes: int
+    duration_seconds: float
+    read_bytes_per_sec: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "device_path": self.device_path,
+            "success": self.success,
+            "message": self.message,
+            "sample_size_bytes": self.sample_size_bytes,
+            "block_size_bytes": self.block_size_bytes,
+            "duration_seconds": self.duration_seconds,
+            "read_bytes_per_sec": self.read_bytes_per_sec,
+        }
+
+
+@dataclass
 class JunkFile:
     path: str
     size_bytes: int

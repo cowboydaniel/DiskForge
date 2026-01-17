@@ -33,6 +33,7 @@ import humanize
 
 from diskforge import __version__
 from diskforge.core.models import Disk, DiskType, Partition
+from diskforge.core.job import Job, JobStatus
 from diskforge.core.safety import DangerMode
 from diskforge.core.session import Session
 from diskforge.ui.models.disk_model import DiskModel
@@ -74,6 +75,10 @@ from diskforge.ui.views.wizards import (
     ShredWizard,
     DefragDiskWizard,
     DefragPartitionWizard,
+    DiskHealthCheckWizard,
+    BadSectorScanWizard,
+    DiskSpeedTestWizard,
+    SurfaceTestWizard,
     Align4KWizard,
     ConvertPartitionStyleWizard,
     ConvertSystemPartitionStyleWizard,
@@ -109,6 +114,7 @@ class MainWindow(QMainWindow):
         self._disk_model = DiskModel(self)
         self._job_model = JobModel(session.job_runner, self)
         self._pending_model = PendingOperationsModel(self)
+        self._active_job_id: str | None = None
 
         # Set up UI
         self._apply_aomei_theme()
@@ -117,6 +123,9 @@ class MainWindow(QMainWindow):
         self._setup_central_widget()
         self._setup_statusbar()
         self._update_danger_mode_indicator()
+
+        self._job_model.jobStatusChanged.connect(self._on_job_status_changed)
+        self._job_model.jobProgressChanged.connect(self._on_job_progress_changed)
 
         # Refresh timer
         self._refresh_timer = QTimer(self)
@@ -170,6 +179,10 @@ class MainWindow(QMainWindow):
             "shred_files": QAction("Shred Files/Folders...", self),
             "defrag_disk": QAction("Defragment Disk...", self),
             "defrag_partition": QAction("Defragment Partition...", self),
+            "disk_health_check": QAction("Disk Health Check...", self),
+            "disk_speed_test": QAction("Disk Speed Test...", self),
+            "bad_sector_scan": QAction("Bad Sector Scan...", self),
+            "surface_test": QAction("Surface Test...", self),
             "align_4k": QAction("Align 4K...", self),
             "convert_partition_style": QAction("Convert MBR/GPT...", self),
             "convert_system_partition_style": QAction("Convert System Disk MBR/GPT...", self),
@@ -226,6 +239,10 @@ class MainWindow(QMainWindow):
             "shred_files": DiskForgeIcons.DELETE_PARTITION,
             "defrag_disk": DiskForgeIcons.REFRESH,
             "defrag_partition": DiskForgeIcons.REFRESH,
+            "disk_health_check": DiskForgeIcons.REFRESH,
+            "disk_speed_test": DiskForgeIcons.REFRESH,
+            "bad_sector_scan": DiskForgeIcons.REFRESH,
+            "surface_test": DiskForgeIcons.REFRESH,
             "align_4k": DiskForgeIcons.CREATE_PARTITION,
             "convert_partition_style": DiskForgeIcons.CLONE_DISK,
             "convert_system_partition_style": DiskForgeIcons.CLONE_DISK,
@@ -286,6 +303,10 @@ class MainWindow(QMainWindow):
         actions["shred_files"].triggered.connect(self._on_shred_files)
         actions["defrag_disk"].triggered.connect(self._on_defrag_disk)
         actions["defrag_partition"].triggered.connect(self._on_defrag_partition)
+        actions["disk_health_check"].triggered.connect(self._on_disk_health_check)
+        actions["disk_speed_test"].triggered.connect(self._on_disk_speed_test)
+        actions["bad_sector_scan"].triggered.connect(self._on_bad_sector_scan)
+        actions["surface_test"].triggered.connect(self._on_surface_test)
         actions["align_4k"].triggered.connect(self._on_align_4k)
         actions["convert_partition_style"].triggered.connect(self._on_convert_partition_style)
         actions["convert_system_partition_style"].triggered.connect(self._on_convert_system_partition_style)
@@ -411,6 +432,18 @@ class MainWindow(QMainWindow):
                         [
                             RibbonButton(self._actions["initialize_disk"], size="small"),
                             RibbonButton(self._actions["convert_disk_layout"], size="small"),
+                        ],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Diagnostics",
+                    columns=[
+                        [RibbonButton(self._actions["disk_health_check"])],
+                        [
+                            RibbonButton(self._actions["disk_speed_test"], size="small"),
+                            RibbonButton(self._actions["bad_sector_scan"], size="small"),
+                            RibbonButton(self._actions["surface_test"], size="small"),
                         ],
                     ],
                     separator_after=True,
@@ -747,6 +780,50 @@ class MainWindow(QMainWindow):
             noun = "operation" if count == 1 else "operations"
             self._status_label.setText(f"Applied {count} {noun}.")
 
+    def _submit_job(self, job: Job[Any]) -> None:
+        """Submit a job to the runner and track it in the UI."""
+        self._session.submit_job(job)
+        self._job_model.addJob(job)
+        if hasattr(self, "_status_label"):
+            self._status_label.setText(f"Queued job: {job.name}")
+
+    def _find_running_job(self) -> Job[Any] | None:
+        for row in range(self._job_model.rowCount()):
+            job = self._job_model.getJobAtRow(row)
+            if job and job.status == JobStatus.RUNNING:
+                return job
+        return None
+
+    def _on_job_status_changed(self, job_id: str, status: JobStatus) -> None:
+        if status == JobStatus.RUNNING:
+            self._active_job_id = job_id
+            job = self._job_model.getJobById(job_id)
+            if job:
+                self._progress_widget.setRunning(True)
+                self._progress_widget.updateProgress(job.context.get_progress())
+            if hasattr(self, "_status_label") and job:
+                self._status_label.setText(f"Running: {job.name}")
+            return
+
+        if status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+            if job_id == self._active_job_id:
+                next_job = self._find_running_job()
+                if next_job:
+                    self._active_job_id = next_job.id
+                    self._progress_widget.setRunning(True)
+                    self._progress_widget.updateProgress(next_job.context.get_progress())
+                    if hasattr(self, "_status_label"):
+                        self._status_label.setText(f"Running: {next_job.name}")
+                else:
+                    self._active_job_id = None
+                    self._progress_widget.reset()
+                    if hasattr(self, "_status_label"):
+                        self._status_label.setText("Ready")
+
+    def _on_job_progress_changed(self, job_id: str, progress: Any) -> None:
+        if job_id == self._active_job_id:
+            self._progress_widget.updateProgress(progress)
+
     def _apply_aomei_theme(self) -> None:
         """Apply an AOMEI-inspired theme to the main window."""
         self.setStyleSheet(aomei_qss())
@@ -908,6 +985,30 @@ class MainWindow(QMainWindow):
                 "Defragment Disk...",
             )
             defrag_action.triggered.connect(lambda: self._defrag_disk(item))
+
+            health_action = menu.addAction(
+                self._actions["disk_health_check"].icon(),
+                "Disk Health Check...",
+            )
+            health_action.triggered.connect(lambda: self._disk_health_check(item))
+
+            speed_action = menu.addAction(
+                self._actions["disk_speed_test"].icon(),
+                "Disk Speed Test...",
+            )
+            speed_action.triggered.connect(lambda: self._disk_speed_test(item))
+
+            bad_sector_action = menu.addAction(
+                self._actions["bad_sector_scan"].icon(),
+                "Bad Sector Scan...",
+            )
+            bad_sector_action.triggered.connect(lambda: self._bad_sector_scan(item))
+
+            surface_action = menu.addAction(
+                self._actions["surface_test"].icon(),
+                "Surface Test...",
+            )
+            surface_action.triggered.connect(lambda: self._surface_test(item))
 
             menu.addSeparator()
 
@@ -1725,6 +1826,101 @@ class MainWindow(QMainWindow):
         )
         self._run_wizard(wizard)
 
+    def _on_disk_health_check(self) -> None:
+        """Handle disk health check action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        disk = item if isinstance(item, Disk) else self._find_parent_disk(item) if isinstance(item, Partition) else None
+        if disk:
+            self._disk_health_check(disk)
+            return
+        QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+
+    def _disk_health_check(self, disk: Disk) -> None:
+        wizard = DiskHealthCheckWizard(
+            self._session,
+            disk,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_disk_speed_test(self) -> None:
+        """Handle disk speed test action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        disk = item if isinstance(item, Disk) else self._find_parent_disk(item) if isinstance(item, Partition) else None
+        if disk:
+            self._disk_speed_test(disk)
+            return
+        QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+
+    def _disk_speed_test(self, disk: Disk) -> None:
+        wizard = DiskSpeedTestWizard(
+            self._session,
+            disk,
+            self._submit_job,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_bad_sector_scan(self) -> None:
+        """Handle bad sector scan action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        disk = item if isinstance(item, Disk) else self._find_parent_disk(item) if isinstance(item, Partition) else None
+        if disk:
+            self._bad_sector_scan(disk)
+            return
+        QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+
+    def _bad_sector_scan(self, disk: Disk) -> None:
+        wizard = BadSectorScanWizard(
+            self._session,
+            disk,
+            self._submit_job,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_surface_test(self) -> None:
+        """Handle surface test action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        disk = item if isinstance(item, Disk) else self._find_parent_disk(item) if isinstance(item, Partition) else None
+        if disk:
+            self._surface_test(disk)
+            return
+        QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+
+    def _surface_test(self, disk: Disk) -> None:
+        wizard = SurfaceTestWizard(
+            self._session,
+            disk,
+            self._submit_job,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
     def _on_defrag_partition(self) -> None:
         """Handle defragment partition action."""
         indexes = self._disk_tree.selectionModel().selectedIndexes()
@@ -2205,16 +2401,33 @@ class MainWindow(QMainWindow):
 
     def _on_cancel_job(self) -> None:
         """Cancel current job."""
-        # For now, just log - full implementation would track current job
-        self._status_label.setText("Cancellation requested")
+        if not self._active_job_id:
+            self._status_label.setText("No running job to cancel")
+            return
+        if self._session.cancel_job(self._active_job_id):
+            self._status_label.setText("Cancellation requested")
+        else:
+            self._status_label.setText("Unable to cancel job")
 
     def _on_pause_job(self) -> None:
         """Pause current job."""
-        self._status_label.setText("Job paused")
+        if not self._active_job_id:
+            self._status_label.setText("No running job to pause")
+            return
+        if self._session.job_runner.pause(self._active_job_id):
+            self._status_label.setText("Job paused")
+        else:
+            self._status_label.setText("Unable to pause job")
 
     def _on_resume_job(self) -> None:
         """Resume current job."""
-        self._status_label.setText("Job resumed")
+        if not self._active_job_id:
+            self._status_label.setText("No paused job to resume")
+            return
+        if self._session.job_runner.resume(self._active_job_id):
+            self._status_label.setText("Job resumed")
+        else:
+            self._status_label.setText("Unable to resume job")
 
     def _show_about(self) -> None:
         """Show about dialog."""
