@@ -6,18 +6,19 @@ QMainWindow {
 QToolBar#ribbonToolbar {
     background-color: #ffffff;
     border-bottom: 1px solid #d7dde8;
-    spacing: 6px;
+    spacing: 8px;
 }
 
 QToolButton#toolbarButton {
     background-color: #ffffff;
     border: 1px solid transparent;
-    padding: 4px 8px;
+    color: #1f2a44;
+    padding: 6px 10px;
     border-radius: 6px;
 }
 
 QToolButton#toolbarButton[compact="true"] {
-    padding: 2px 6px;
+    padding: 4px 8px;
     font-size: 10px;
 }
 
@@ -102,7 +103,7 @@ QTableView {
 QHeaderView::section {
     background-color: #f0f3f8;
     border: 1px solid #e0e6f0;
-    padding: 4px 6px;
+    padding: 6px 8px;
 }
 
 QTabWidget::pane {
@@ -114,7 +115,7 @@ QTabWidget::pane {
 QTabBar::tab {
     background-color: #f0f3f8;
     border: 1px solid #e0e6f0;
-    padding: 6px 10px;
+    padding: 8px 12px;
     border-top-left-radius: 6px;
     border-top-right-radius: 6px;
     margin-right: 4px;
@@ -154,7 +155,7 @@ QLabel {
 QPushButton {
     background-color: #ffffff;
     border: 1px solid #e0e6f0;
-    padding: 6px 12px;
+    padding: 8px 12px;
     border-radius: 6px;
     text-align: left;
 }
@@ -184,7 +185,7 @@ QPushButton#selectionPropertiesButton:hover {
 QToolButton#selectionActionButton {
     background-color: #f7f9fc;
     border: 1px solid #e0e6f0;
-    padding: 6px 10px;
+    padding: 8px 12px;
     border-radius: 6px;
     text-align: left;
 }
@@ -197,6 +198,14 @@ QToolButton#selectionActionButton:hover {
 
 QToolButton#selectionActionButton:disabled {
     color: #9aa7bc;
+}
+
+#selectionActionsSubtitle {
+    color: #6f7f9b;
+}
+
+#selectionActionsScroll {
+    background: transparent;
 }
 
 QScrollBar:vertical {
