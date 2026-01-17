@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
     QFrame,
     QSizePolicy,
     QToolButton,
+    QListWidget,
+    QListWidgetItem,
 )
 from PySide6.QtCore import Qt, QTimer, Slot, QModelIndex, QSize
 from PySide6.QtGui import QAction, QIcon
@@ -43,7 +45,6 @@ from diskforge.ui.assets import DiskForgeIcons
 from diskforge.ui.theme import aomei_qss
 from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
 from diskforge.ui.widgets.disk_view import DiskMapWidget, MultiDiskMapWidget
-from diskforge.ui.widgets.operations_tree import OperationsTreeWidget
 from diskforge.ui.widgets.progress_widget import ProgressWidget, PendingOperationsWidget
 from diskforge.ui.widgets.selection_actions_panel import SelectionActionsPanel
 from diskforge.ui.widgets.ribbon import RibbonWidget, RibbonButton, RibbonGroup
@@ -771,28 +772,73 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(12, 12, 12, 12)
         right_layout.setSpacing(12)
 
-        selection_actions_group = QGroupBox("Selection Actions")
-        selection_actions_layout = QVBoxLayout(selection_actions_group)
-        self._selection_actions_panel = SelectionActionsPanel(self._actions, selection_actions_group)
+        selection_actions_section = QWidget()
+        selection_actions_layout = QVBoxLayout(selection_actions_section)
+        selection_actions_layout.setContentsMargins(0, 0, 0, 0)
+        selection_actions_layout.setSpacing(6)
+
+        selection_actions_title = QLabel("Selection Actions")
+        selection_actions_title.setObjectName("sectionTitle")
+        selection_actions_layout.addWidget(selection_actions_title)
+
+        self._selection_actions_panel = SelectionActionsPanel(self._actions, selection_actions_section)
         self._selection_actions_panel.propertiesRequested.connect(self._show_selection_properties)
         selection_actions_layout.addWidget(self._selection_actions_panel)
-        right_layout.addWidget(selection_actions_group)
+        right_layout.addWidget(selection_actions_section)
 
-        actions_group = QGroupBox("Actions")
-        actions_layout = QVBoxLayout(actions_group)
+        actions_section = QWidget()
+        actions_layout = QVBoxLayout(actions_section)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(6)
 
-        operations_tree = OperationsTreeWidget(self._actions, actions_group)
-        operations_tree.setObjectName("operationsTree")
-        actions_layout.addWidget(operations_tree)
-        right_layout.addWidget(actions_group)
+        actions_title = QLabel("Actions")
+        actions_title.setObjectName("sectionTitle")
+        actions_layout.addWidget(actions_title)
+
+        self._actions_list = QListWidget()
+        self._actions_list.setObjectName("actionsList")
+        self._actions_list.setIconSize(QSize(18, 18))
+        self._actions_list.setSpacing(4)
+        self._actions_list.setSelectionMode(QListWidget.NoSelection)
+
+        quick_action_keys = [
+            "create_partition",
+            "format_partition",
+            "delete_partition",
+            "resize_move_partition",
+            "clone_disk",
+            "clone_partition",
+            "create_backup",
+            "system_backup",
+            "restore_backup",
+            "rescue_media",
+            "refresh",
+            "danger_mode",
+        ]
+        for action_key in quick_action_keys:
+            action = self._actions.get(action_key)
+            if action is None:
+                continue
+            item = QListWidgetItem(action.icon(), action.text())
+            item.setData(Qt.UserRole, action_key)
+            self._actions_list.addItem(item)
+
+        self._actions_list.itemClicked.connect(self._on_quick_action_selected)
+        actions_layout.addWidget(self._actions_list)
+        right_layout.addWidget(actions_section)
 
         # Details panel
-        details_group = QGroupBox("Selection Details")
-        details_layout = QVBoxLayout(details_group)
+        details_section = QWidget()
+        details_layout = QVBoxLayout(details_section)
+        details_layout.setContentsMargins(0, 0, 0, 0)
+        details_layout.setSpacing(6)
+        details_title = QLabel("Selection Details")
+        details_title.setObjectName("sectionTitle")
+        details_layout.addWidget(details_title)
         self._details_label = QLabel("Select a disk or partition to view details")
         self._details_label.setWordWrap(True)
         details_layout.addWidget(self._details_label)
-        right_layout.addWidget(details_group)
+        right_layout.addWidget(details_section)
 
         # BitLocker panel
         self._bitlocker_group = QGroupBox("BitLocker")
@@ -886,6 +932,14 @@ class MainWindow(QMainWindow):
             count = len(pending_jobs)
             noun = "operation" if count == 1 else "operations"
             self._status_label.setText(f"Applied {count} {noun}.")
+
+    def _on_quick_action_selected(self, item: QListWidgetItem) -> None:
+        action_key = item.data(Qt.UserRole)
+        if not action_key:
+            return
+        action = self._actions.get(action_key)
+        if action is not None:
+            action.trigger()
 
     def _submit_job(self, job: Job[Any]) -> None:
         """Submit a job to the runner and track it in the UI."""

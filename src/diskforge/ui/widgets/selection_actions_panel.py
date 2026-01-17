@@ -71,6 +71,9 @@ class SelectionActionsPanel(QWidget):
         self._properties_button = QPushButton("Properties")
         self._properties_button.setObjectName("selectionPropertiesButton")
         self._properties_button.setEnabled(False)
+        self._properties_button.setMinimumWidth(120)
+        self._properties_button.setMinimumHeight(30)
+        self._properties_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self._properties_button.clicked.connect(self.propertiesRequested)
 
         header_layout = QHBoxLayout()
