@@ -41,7 +41,7 @@ from diskforge.ui.models.job_model import JobModel, PendingOperationsModel
 from diskforge.ui.assets import DiskForgeIcons
 from diskforge.ui.theme import aomei_qss
 from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
-from diskforge.ui.widgets.disk_view import DiskMapWidget
+from diskforge.ui.widgets.disk_view import DiskMapWidget, MultiDiskMapWidget
 from diskforge.ui.widgets.operations_tree import OperationsTreeWidget
 from diskforge.ui.widgets.progress_widget import ProgressWidget, PendingOperationsWidget
 from diskforge.ui.widgets.selection_actions_panel import SelectionActionsPanel
@@ -717,6 +717,13 @@ class MainWindow(QMainWindow):
         disk_layout.addWidget(self._disk_tree)
         disk_list_layout.addWidget(disk_group)
 
+        disk_overview_title = QLabel("Disk Overview")
+        disk_overview_title.setObjectName("sectionTitle")
+        disk_list_layout.addWidget(disk_overview_title)
+
+        self._multi_disk_map = MultiDiskMapWidget()
+        disk_list_layout.addWidget(self._multi_disk_map)
+
         disk_map_panel = QFrame()
         disk_map_panel.setObjectName("diskMapPanel")
         disk_panel_layout = QVBoxLayout(disk_map_panel)
@@ -1034,6 +1041,7 @@ class MainWindow(QMainWindow):
         try:
             inventory = self._session.platform.get_disk_inventory()
             self._disk_model.setInventory(inventory)
+            self._multi_disk_map.setDisks(inventory.disks)
 
             # Update status
             self._disk_count_label.setText(
@@ -1043,6 +1051,7 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             self._status_label.setText(f"Error: {e}")
+            self._multi_disk_map.setDisks([])
 
     @Slot()
     def _on_disk_selection_changed(self) -> None:
