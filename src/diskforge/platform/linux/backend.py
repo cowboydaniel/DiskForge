@@ -29,6 +29,13 @@ from diskforge.core.models import (
     ImageInfo,
     Partition,
     PartitionStyle,
+    BadSectorScanOptions,
+    SurfaceTestOptions,
+    DiskSpeedTestOptions,
+    DiskHealthResult,
+    BadSectorScanResult,
+    SurfaceTestResult,
+    DiskSpeedTestResult,
 )
 from diskforge.platform.base import CommandResult, PlatformBackend
 from diskforge.platform.file_ops import (
@@ -108,6 +115,7 @@ class LinuxBackend(PlatformBackend):
     UMOUNT = "umount"
     SMARTCTL = "smartctl"
     BLKDISCARD = "blkdiscard"
+    BADBLOCKS = "badblocks"
 
     # Filesystem tools
     MKFS_EXT4 = "mkfs.ext4"
@@ -2340,6 +2348,251 @@ For more information, visit: https://diskforge.dev/docs/rescue
             return json.loads(result.stdout)
         except json.JSONDecodeError:
             return None
+
+    # ==================== Diagnostics Operations ====================
+
+    def _parse_badblocks_output(self, output: str) -> list[int]:
+        bad_blocks: list[int] = []
+        for line in output.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if line.isdigit():
+                bad_blocks.append(int(line))
+        return bad_blocks
+
+    def _run_badblocks(
+        self,
+        device_path: str,
+        block_size: int,
+        passes: int,
+        mode: str,
+        context: JobContext | None = None,
+    ) -> tuple[bool, str, list[int], float]:
+        if not self._check_tool(self.BADBLOCKS):
+            return False, "badblocks not found (install e2fsprogs)", [], 0.0
+
+        valid, message = self.validate_device_path(device_path)
+        if not valid:
+            return False, message, [], 0.0
+
+        cmd = [self.BADBLOCKS, "-s", "-v", "-b", str(block_size)]
+        mode = mode.lower()
+        if mode == "destructive":
+            cmd.append("-w")
+        elif mode == "non-destructive":
+            cmd.append("-n")
+
+        if passes > 1 and mode in {"destructive", "non-destructive"}:
+            cmd.extend(["-p", str(passes)])
+
+        cmd.append(device_path)
+
+        if context:
+            context.update_progress(
+                stage="Surface Test",
+                message=f"Running badblocks ({mode}) on {device_path}...",
+                current=0,
+                total=100,
+            )
+
+        result = self.run_command(cmd, timeout=24 * 3600, check=False)
+        duration = result.duration_seconds
+        bad_blocks = self._parse_badblocks_output(result.stdout)
+
+        if context:
+            context.update_progress(current=100, total=100, message="Scan complete.")
+
+        if result.success:
+            return True, "Scan completed", bad_blocks, duration
+        return False, result.stderr or "Scan failed", bad_blocks, duration
+
+    def bad_sector_scan(
+        self,
+        options: BadSectorScanOptions,
+        context: JobContext | None = None,
+    ) -> BadSectorScanResult:
+        success, message, bad_blocks, duration = self._run_badblocks(
+            options.device_path,
+            options.block_size,
+            max(1, options.passes),
+            "read",
+            context,
+        )
+        return BadSectorScanResult(
+            device_path=options.device_path,
+            success=success,
+            message=message,
+            bad_sector_count=len(bad_blocks),
+            bad_sectors=bad_blocks,
+            duration_seconds=duration,
+            block_size=options.block_size,
+            passes=max(1, options.passes),
+            tool=self.BADBLOCKS,
+        )
+
+    def disk_health_check(
+        self,
+        device_path: str,
+        context: JobContext | None = None,
+    ) -> DiskHealthResult:
+        if context:
+            context.update_progress(
+                stage="Health Check",
+                message=f"Checking SMART health for {device_path}...",
+                current=0,
+                total=100,
+            )
+
+        smart_info = self.get_smart_info(device_path)
+        if context:
+            context.update_progress(current=100, total=100, message="Health check complete.")
+
+        if smart_info is None:
+            return DiskHealthResult(
+                device_path=device_path,
+                healthy=False,
+                status="UNKNOWN",
+                smart_available=False,
+                temperature_c=None,
+                message="SMART data not available",
+            )
+
+        smart_status = smart_info.get("smart_status", {})
+        healthy = bool(smart_status.get("passed", True))
+        status = "PASSED" if healthy else "FAILED"
+        temperature = None
+        if "temperature" in smart_info:
+            temperature = smart_info.get("temperature", {}).get("current")
+
+        message = "SMART health check passed" if healthy else "SMART health check failed"
+        return DiskHealthResult(
+            device_path=device_path,
+            healthy=healthy,
+            status=status,
+            smart_available=True,
+            temperature_c=temperature,
+            message=message,
+            details=smart_info,
+        )
+
+    def disk_speed_test(
+        self,
+        options: DiskSpeedTestOptions,
+        context: JobContext | None = None,
+    ) -> DiskSpeedTestResult:
+        valid, message = self.validate_device_path(options.device_path)
+        if not valid:
+            return DiskSpeedTestResult(
+                device_path=options.device_path,
+                success=False,
+                message=message,
+                sample_size_bytes=options.sample_size_bytes,
+                block_size_bytes=options.block_size_bytes,
+                duration_seconds=0.0,
+                read_bytes_per_sec=0.0,
+            )
+
+        disk_info = self.get_disk_info(options.device_path)
+        sample_size = options.sample_size_bytes
+        if disk_info and disk_info.size_bytes:
+            sample_size = min(sample_size, disk_info.size_bytes)
+
+        block_size = max(1024 * 1024, options.block_size_bytes)
+        bytes_read = 0
+        start_time = time.time()
+
+        if context:
+            context.update_progress(
+                stage="Speed Test",
+                message=f"Reading {sample_size} bytes from {options.device_path}...",
+                bytes_total=sample_size,
+                bytes_processed=0,
+                current=0,
+                total=100,
+            )
+
+        try:
+            with open(options.device_path, "rb", buffering=0) as handle:
+                while bytes_read < sample_size:
+                    if context:
+                        context.check_cancelled()
+                        context.wait_if_paused()
+                    chunk_size = min(block_size, sample_size - bytes_read)
+                    data = handle.read(chunk_size)
+                    if not data:
+                        break
+                    bytes_read += len(data)
+                    if context:
+                        elapsed = time.time() - start_time
+                        rate = bytes_read / elapsed if elapsed > 0 else 0.0
+                        percent = (bytes_read / sample_size) * 100 if sample_size else 0
+                        context.update_progress(
+                            bytes_processed=bytes_read,
+                            bytes_total=sample_size,
+                            rate_bytes_per_sec=rate,
+                            current=int(percent),
+                            total=100,
+                            message=f"Read {bytes_read} bytes...",
+                        )
+        except OSError as exc:
+            return DiskSpeedTestResult(
+                device_path=options.device_path,
+                success=False,
+                message=f"Speed test failed: {exc}",
+                sample_size_bytes=sample_size,
+                block_size_bytes=block_size,
+                duration_seconds=0.0,
+                read_bytes_per_sec=0.0,
+            )
+
+        duration = max(time.time() - start_time, 0.0001)
+        rate = bytes_read / duration if bytes_read else 0.0
+
+        if context:
+            context.update_progress(
+                bytes_processed=bytes_read,
+                bytes_total=sample_size,
+                rate_bytes_per_sec=rate,
+                current=100,
+                total=100,
+                message="Speed test complete.",
+            )
+
+        return DiskSpeedTestResult(
+            device_path=options.device_path,
+            success=True,
+            message="Speed test completed",
+            sample_size_bytes=sample_size,
+            block_size_bytes=block_size,
+            duration_seconds=duration,
+            read_bytes_per_sec=rate,
+        )
+
+    def surface_test(
+        self,
+        options: SurfaceTestOptions,
+        context: JobContext | None = None,
+    ) -> SurfaceTestResult:
+        success, message, bad_blocks, duration = self._run_badblocks(
+            options.device_path,
+            options.block_size,
+            max(1, options.passes),
+            options.mode,
+            context,
+        )
+        return SurfaceTestResult(
+            device_path=options.device_path,
+            success=success,
+            message=message,
+            mode=options.mode,
+            bad_sector_count=len(bad_blocks),
+            bad_sectors=bad_blocks,
+            duration_seconds=duration,
+            block_size=options.block_size,
+            passes=max(1, options.passes),
+            tool=self.BADBLOCKS,
+        )
 
     # ==================== Utility Methods ====================
 

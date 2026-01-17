@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Iterable
+from typing import Callable, Iterable, Any
 
 from PySide6.QtWidgets import (
     QWizard,
@@ -72,6 +72,12 @@ from diskforge.core.models import (
 )
 from diskforge.core.session import Session
 from diskforge.core.safety import DangerMode
+from diskforge.core.job import Job
+from diskforge.plugins.operations import (
+    BadSectorScanJob,
+    SurfaceTestJob,
+    DiskSpeedTestJob,
+)
 
 
 @dataclass(frozen=True)
@@ -322,6 +328,56 @@ class OperationResultPage(QWizardPage):
 
         if result.success and self._success_follow_up:
             self._success_follow_up()
+
+
+class JobSubmissionPage(QWizardPage):
+    """Final wizard page to submit a background job."""
+
+    def __init__(
+        self,
+        title: str,
+        build_job: Callable[[], Job[Any]],
+        submit_job: Callable[[Job[Any]], None],
+        status_callback: Callable[[str], None],
+        status_message: str,
+        parent: QWizard | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setTitle(title)
+        self._build_job = build_job
+        self._submit_job = submit_job
+        self._status_callback = status_callback
+        self._status_message = status_message
+        self._job: Job[Any] | None = None
+
+        layout = QVBoxLayout(self)
+        self._status_label = QLabel("Ready to queue job.")
+        self._status_label.setWordWrap(True)
+        layout.addWidget(self._status_label)
+
+        self._details = QTextEdit()
+        self._details.setReadOnly(True)
+        self._details.setMinimumHeight(140)
+        layout.addWidget(self._details)
+
+    def initializePage(self) -> None:
+        if self._job is not None:
+            return
+
+        self._status_callback(self._status_message)
+        self._job = self._build_job()
+        self._submit_job(self._job)
+        self._status_callback("Ready")
+
+        wizard = self.wizard()
+        if wizard is not None:
+            wizard.operation_success = True
+            wizard.operation_message = f"Queued job {self._job.name}"
+
+        self._status_label.setText(
+            f"Queued job {self._job.name} (ID: {self._job.id[:8]})"
+        )
+        self._details.setPlainText(self._job.get_plan())
 
 
 class DiskForgeWizard(QWizard):
@@ -2298,6 +2354,200 @@ class DefragPartitionWizard(DiskForgeWizard):
     def _defrag_partition(self) -> OperationResult:
         success, message = self._session.platform.defrag_partition(self._partition.device_path)
         return OperationResult(success=success, message=message)
+
+
+class DiskHealthCheckWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Disk Health Check")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+
+        info_page = QWizardPage()
+        info_page.setTitle("Health Check")
+        info_layout = QVBoxLayout(info_page)
+        info_layout.addWidget(QLabel(f"Check SMART health for {disk.device_path}."))
+
+        result_page = OperationResultPage(
+            "Disk Health Check",
+            self._check_health,
+            status_callback,
+            f"Checking health for {disk.device_path}...",
+        )
+
+        self.addPage(info_page)
+        self.addPage(result_page)
+
+    def _check_health(self) -> OperationResult:
+        result = self._session.platform.disk_health_check(self._disk.device_path)
+        status = result.status
+        message = f"SMART status: {status} ({result.message})"
+        return OperationResult(success=result.smart_available, message=message)
+
+
+class BadSectorScanWizard(DiskForgeWizard):
+    def __init__(
+        self,
+        session: Session,
+        disk: Disk,
+        submit_job: Callable[[Job[Any]], None],
+        status_callback: Callable[[str], None],
+        parent: QWizard | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Bad Sector Scan")
+        self._session = session
+        self._disk = disk
+        self._submit_job = submit_job
+        self._status_callback = status_callback
+
+        options_page = QWizardPage()
+        options_page.setTitle("Scan Options")
+        options_layout = QFormLayout(options_page)
+        self._block_size_input = QLineEdit("4096")
+        self._passes_input = QLineEdit("1")
+        self._block_size_input.textChanged.connect(options_page.completeChanged)
+        self._passes_input.textChanged.connect(options_page.completeChanged)
+        options_layout.addRow("Block size (bytes):", self._block_size_input)
+        options_layout.addRow("Passes:", self._passes_input)
+        options_page.isComplete = lambda: self._block_size_input.text().isdigit() and self._passes_input.text().isdigit()  # type: ignore[assignment]
+
+        submit_page = JobSubmissionPage(
+            "Queue Bad Sector Scan",
+            self._build_job,
+            submit_job,
+            status_callback,
+            f"Queueing scan for {disk.device_path}...",
+        )
+
+        self.addPage(options_page)
+        self.addPage(submit_page)
+
+    def _build_job(self) -> Job[Any]:
+        block_size = max(int(self._block_size_input.text() or "4096"), 512)
+        passes = max(int(self._passes_input.text() or "1"), 1)
+        job = BadSectorScanJob(
+            device_path=self._disk.device_path,
+            block_size=block_size,
+            passes=passes,
+        )
+        job.set_session(self._session)
+        return job
+
+
+class DiskSpeedTestWizard(DiskForgeWizard):
+    def __init__(
+        self,
+        session: Session,
+        disk: Disk,
+        submit_job: Callable[[Job[Any]], None],
+        status_callback: Callable[[str], None],
+        parent: QWizard | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Disk Speed Test")
+        self._session = session
+        self._disk = disk
+        self._submit_job = submit_job
+        self._status_callback = status_callback
+
+        options_page = QWizardPage()
+        options_page.setTitle("Speed Test Options")
+        options_layout = QFormLayout(options_page)
+        self._sample_size_input = QLineEdit("256")
+        self._block_size_input = QLineEdit("4")
+        self._sample_size_input.textChanged.connect(options_page.completeChanged)
+        self._block_size_input.textChanged.connect(options_page.completeChanged)
+        options_layout.addRow("Sample size (MiB):", self._sample_size_input)
+        options_layout.addRow("Block size (MiB):", self._block_size_input)
+        options_page.isComplete = lambda: self._sample_size_input.text().isdigit() and self._block_size_input.text().isdigit()  # type: ignore[assignment]
+
+        submit_page = JobSubmissionPage(
+            "Queue Speed Test",
+            self._build_job,
+            submit_job,
+            status_callback,
+            f"Queueing speed test for {disk.device_path}...",
+        )
+
+        self.addPage(options_page)
+        self.addPage(submit_page)
+
+    def _build_job(self) -> Job[Any]:
+        sample_mib = max(int(self._sample_size_input.text() or "256"), 1)
+        block_mib = max(int(self._block_size_input.text() or "4"), 1)
+        job = DiskSpeedTestJob(
+            device_path=self._disk.device_path,
+            sample_size_bytes=sample_mib * 1024 * 1024,
+            block_size_bytes=block_mib * 1024 * 1024,
+        )
+        job.set_session(self._session)
+        return job
+
+
+class SurfaceTestWizard(DiskForgeWizard):
+    def __init__(
+        self,
+        session: Session,
+        disk: Disk,
+        submit_job: Callable[[Job[Any]], None],
+        status_callback: Callable[[str], None],
+        parent: QWizard | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Surface Test")
+        self._session = session
+        self._disk = disk
+        self._submit_job = submit_job
+        self._status_callback = status_callback
+
+        options_page = QWizardPage()
+        options_page.setTitle("Surface Test Options")
+        options_layout = QFormLayout(options_page)
+        self._mode_combo = QComboBox()
+        self._mode_combo.addItem("Read-only", "read")
+        self._mode_combo.addItem("Non-destructive", "non-destructive")
+        self._mode_combo.addItem("Destructive", "destructive")
+        self._block_size_input = QLineEdit("4096")
+        self._passes_input = QLineEdit("1")
+        self._block_size_input.textChanged.connect(options_page.completeChanged)
+        self._passes_input.textChanged.connect(options_page.completeChanged)
+        options_layout.addRow("Mode:", self._mode_combo)
+        options_layout.addRow("Block size (bytes):", self._block_size_input)
+        options_layout.addRow("Passes:", self._passes_input)
+        options_page.isComplete = lambda: self._block_size_input.text().isdigit() and self._passes_input.text().isdigit()  # type: ignore[assignment]
+
+        confirm_page = DynamicConfirmationPage(
+            "Confirm Surface Test",
+            "Surface tests can stress disks. Destructive mode will overwrite data.",
+            lambda: session.safety.generate_confirmation_string(disk.device_path),
+        )
+
+        submit_page = JobSubmissionPage(
+            "Queue Surface Test",
+            self._build_job,
+            submit_job,
+            status_callback,
+            f"Queueing surface test for {disk.device_path}...",
+        )
+
+        self.addPage(options_page)
+        self.addPage(confirm_page)
+        self.addPage(submit_page)
+
+    def _build_job(self) -> Job[Any]:
+        block_size = max(int(self._block_size_input.text() or "4096"), 512)
+        passes = max(int(self._passes_input.text() or "1"), 1)
+        mode = self._mode_combo.currentData()
+        job = SurfaceTestJob(
+            device_path=self._disk.device_path,
+            mode=mode,
+            block_size=block_size,
+            passes=passes,
+        )
+        job.set_session(self._session)
+        return job
 
 
 class Align4KWizard(DiskForgeWizard):

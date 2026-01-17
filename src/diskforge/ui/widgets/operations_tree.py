@@ -138,6 +138,17 @@ class OperationsTreeWidget(QTreeView):
         )
 
         self._add_category(
+            "Diagnostics",
+            tools_icon,
+            [
+                ("Disk Health Check", "disk_health_check", self._icon("dialog-information", QStyle.SP_MessageBoxInformation)),
+                ("Disk Speed Test", "disk_speed_test", self._icon("view-refresh", QStyle.SP_BrowserReload)),
+                ("Bad Sector Scan", "bad_sector_scan", self._icon("dialog-warning", QStyle.SP_MessageBoxWarning)),
+                ("Surface Test", "surface_test", self._icon("dialog-warning", QStyle.SP_MessageBoxWarning)),
+            ],
+        )
+
+        self._add_category(
             "Tools",
             tools_icon,
             [

@@ -28,6 +28,9 @@ from diskforge.core.models import (
     JunkCleanupOptions,
     LargeFileScanOptions,
     MoveApplicationOptions,
+    BadSectorScanOptions,
+    SurfaceTestOptions,
+    DiskSpeedTestOptions,
 )
 from diskforge.core.safety import DangerMode
 from diskforge.core.session import Session
@@ -226,6 +229,181 @@ def disk_info(ctx: click.Context, device: str) -> None:
             title="Disk Information",
         )
         console.print(panel)
+
+
+@cli.command("health")
+@click.argument("device")
+@click.pass_context
+def disk_health(ctx: click.Context, device: str) -> None:
+    """Run a disk health (SMART) check."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+
+    result = session.platform.disk_health_check(device)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(result.to_dict(), indent=2, default=str))
+        return
+
+    status_color = "green" if result.healthy else "red"
+    smart_state = "Available" if result.smart_available else "Unavailable"
+    panel = Panel(
+        f"""[cyan]Device:[/cyan] {result.device_path}
+[cyan]SMART:[/cyan] {smart_state}
+[cyan]Status:[/cyan] [{status_color}]{result.status}[/{status_color}]
+[cyan]Message:[/cyan] {result.message}
+[cyan]Temperature:[/cyan] {result.temperature_c if result.temperature_c is not None else "N/A"}""",
+        title="Disk Health Check",
+    )
+    console.print(panel)
+
+    if not result.smart_available:
+        sys.exit(1)
+
+
+@cli.command("speed-test")
+@click.argument("device")
+@click.option("--size-mib", type=int, default=256, help="Sample size in MiB")
+@click.option("--block-mib", type=int, default=4, help="Block size in MiB")
+@click.pass_context
+def speed_test(ctx: click.Context, device: str, size_mib: int, block_mib: int) -> None:
+    """Run a disk read speed test."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+
+    options = DiskSpeedTestOptions(
+        device_path=device,
+        sample_size_bytes=max(size_mib, 1) * 1024 * 1024,
+        block_size_bytes=max(block_mib, 1) * 1024 * 1024,
+    )
+    result = session.platform.disk_speed_test(options)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(result.to_dict(), indent=2, default=str))
+        return
+
+    if result.success:
+        rate = humanize.naturalsize(result.read_bytes_per_sec, binary=True)
+        duration = f"{result.duration_seconds:.2f}s"
+        console.print(
+            Panel(
+                f"""[cyan]Device:[/cyan] {result.device_path}
+[cyan]Sample size:[/cyan] {humanize.naturalsize(result.sample_size_bytes, binary=True)}
+[cyan]Block size:[/cyan] {humanize.naturalsize(result.block_size_bytes, binary=True)}
+[cyan]Read rate:[/cyan] {rate}/s
+[cyan]Duration:[/cyan] {duration}""",
+                title="Disk Speed Test",
+            )
+        )
+    else:
+        console.print(f"[red]✗ {result.message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("bad-sectors")
+@click.argument("device")
+@click.option("--block-size", type=int, default=4096, help="Block size in bytes")
+@click.option("--passes", type=int, default=1, help="Number of passes")
+@click.pass_context
+def bad_sectors(ctx: click.Context, device: str, block_size: int, passes: int) -> None:
+    """Scan disk for bad sectors."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+
+    options = BadSectorScanOptions(
+        device_path=device,
+        block_size=max(block_size, 512),
+        passes=max(passes, 1),
+    )
+    result = session.platform.bad_sector_scan(options)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(result.to_dict(), indent=2, default=str))
+        return
+
+    if result.success:
+        bad_list = ", ".join(str(b) for b in result.bad_sectors[:10])
+        summary = f"{result.bad_sector_count} bad sectors detected"
+        if result.bad_sector_count > 10:
+            summary += " (showing first 10)"
+        console.print(
+            Panel(
+                f"""[cyan]Device:[/cyan] {result.device_path}
+[cyan]Block size:[/cyan] {result.block_size} bytes
+[cyan]Passes:[/cyan] {result.passes}
+[cyan]Duration:[/cyan] {result.duration_seconds:.1f}s
+[cyan]Summary:[/cyan] {summary}
+[cyan]Bad sectors:[/cyan] {bad_list if bad_list else "None"}""",
+                title="Bad Sector Scan",
+            )
+        )
+    else:
+        console.print(f"[red]✗ {result.message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("surface-test")
+@click.argument("device")
+@click.option(
+    "--mode",
+    type=click.Choice(["read", "non-destructive", "destructive"]),
+    default="read",
+    help="Surface test mode",
+)
+@click.option("--block-size", type=int, default=4096, help="Block size in bytes")
+@click.option("--passes", type=int, default=1, help="Number of passes")
+@click.pass_context
+def surface_test(
+    ctx: click.Context,
+    device: str,
+    mode: str,
+    block_size: int,
+    passes: int,
+) -> None:
+    """Run a disk surface test."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+
+    options = SurfaceTestOptions(
+        device_path=device,
+        mode=mode,
+        block_size=max(block_size, 512),
+        passes=max(passes, 1),
+    )
+    result = session.platform.surface_test(options)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(result.to_dict(), indent=2, default=str))
+        return
+
+    if result.success:
+        bad_list = ", ".join(str(b) for b in result.bad_sectors[:10])
+        summary = f"{result.bad_sector_count} bad sectors detected"
+        if result.bad_sector_count > 10:
+            summary += " (showing first 10)"
+        console.print(
+            Panel(
+                f"""[cyan]Device:[/cyan] {result.device_path}
+[cyan]Mode:[/cyan] {result.mode}
+[cyan]Block size:[/cyan] {result.block_size} bytes
+[cyan]Passes:[/cyan] {result.passes}
+[cyan]Duration:[/cyan] {result.duration_seconds:.1f}s
+[cyan]Summary:[/cyan] {summary}
+[cyan]Bad sectors:[/cyan] {bad_list if bad_list else "None"}""",
+                title="Surface Test",
+            )
+        )
+    else:
+        console.print(f"[red]✗ {result.message}[/red]")
+        sys.exit(1)
 
 
 @cli.command("create-partition")
