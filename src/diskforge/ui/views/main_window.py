@@ -26,8 +26,9 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QFrame,
     QSizePolicy,
+    QToolButton,
 )
-from PySide6.QtCore import Qt, QTimer, Slot, QModelIndex
+from PySide6.QtCore import Qt, QTimer, Slot, QModelIndex, QSize
 from PySide6.QtGui import QAction, QIcon
 import humanize
 
@@ -625,39 +626,36 @@ class MainWindow(QMainWindow):
         header_bar = QFrame()
         header_bar.setObjectName("headerBar")
         header_layout = QHBoxLayout(header_bar)
-        header_layout.setContentsMargins(20, 12, 20, 12)
-        header_layout.setSpacing(16)
+        header_layout.setContentsMargins(12, 6, 12, 6)
+        header_layout.setSpacing(12)
 
         logo_label = QLabel("DF")
         logo_label.setObjectName("appLogo")
         logo_label.setAlignment(Qt.AlignCenter)
-        logo_label.setFixedSize(44, 44)
+        logo_label.setFixedSize(26, 26)
 
-        title_block = QVBoxLayout()
         title_label = QLabel("DiskForge")
         title_label.setObjectName("appTitle")
-        subtitle_label = QLabel("Disk management workspace")
-        subtitle_label.setObjectName("appSubtitle")
-        title_block.addWidget(title_label)
-        title_block.addWidget(subtitle_label)
-        title_block.setSpacing(0)
 
         left_header_layout = QHBoxLayout()
-        left_header_layout.setSpacing(12)
+        left_header_layout.setContentsMargins(0, 0, 0, 0)
+        left_header_layout.setSpacing(8)
         left_header_layout.addWidget(logo_label)
-        left_header_layout.addLayout(title_block)
+        left_header_layout.addWidget(title_label)
 
         header_layout.addLayout(left_header_layout)
         header_layout.addStretch()
 
         right_header_layout = QHBoxLayout()
-        right_header_layout.setSpacing(8)
+        right_header_layout.setSpacing(6)
 
         def add_header_action(action: QAction, label: str) -> None:
-            button = QPushButton(label)
+            button = QToolButton()
             button.setObjectName("headerActionButton")
             button.setIcon(action.icon())
-            button.setFlat(True)
+            button.setIconSize(QSize(16, 16))
+            button.setAutoRaise(True)
+            button.setToolTip(label)
             button.clicked.connect(action.trigger)
             right_header_layout.addWidget(button)
 
