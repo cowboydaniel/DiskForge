@@ -10,6 +10,8 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from diskforge.core.models import CloneMode
+
 if TYPE_CHECKING:
     from diskforge.core.models import (
         BackupType,
