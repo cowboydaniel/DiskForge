@@ -51,6 +51,24 @@ class BackupConfig(BaseModel):
     verify_after_write: bool = True
     chunk_size_mb: int = Field(default=64, ge=1, le=1024)
     temp_directory: Path | None = None
+    file_selection: "FileSelectionConfig" = Field(default_factory=lambda: FileSelectionConfig())
+
+
+class FileSelectionConfig(BaseModel):
+    """Configuration for file-level backup selections."""
+
+    include_paths: list[Path] = Field(default_factory=list)
+    exclude_patterns: list[str] = Field(default_factory=list)
+    follow_symlinks: bool = False
+    max_depth: int | None = Field(default=None, ge=0)
+
+    @field_validator("include_paths", mode="before")
+    @classmethod
+    def expand_paths(cls, v: list[str] | str | Path | None) -> list[Path]:
+        if v is None:
+            return []
+        values = v if isinstance(v, list) else [v]
+        return [Path(path).expanduser().resolve() for path in values]
 
 
 class SystemBackupConfig(BaseModel):

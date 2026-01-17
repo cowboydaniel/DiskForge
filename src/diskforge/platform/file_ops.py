@@ -14,6 +14,7 @@ from typing import Iterable, Iterator
 from diskforge.core.models import (
     DuplicateFileGroup,
     DuplicateScanResult,
+    FileSelectionEntry,
     FileRemovalResult,
     FreeSpaceReport,
     JunkCleanupResult,
@@ -45,6 +46,7 @@ def iter_files(
     *,
     follow_symlinks: bool = False,
     max_depth: int | None = None,
+    include_symlinks: bool = False,
 ) -> Iterator[Path]:
     for root in roots:
         if not root.exists():
@@ -59,9 +61,126 @@ def iter_files(
             dirnames[:] = [d for d in dirnames if not _match_exclude(current / d, exclude_patterns)]
             for filename in filenames:
                 path = current / filename
-                if path.is_symlink() or _match_exclude(path, exclude_patterns):
+                if (path.is_symlink() and not include_symlinks) or _match_exclude(
+                    path,
+                    exclude_patterns,
+                ):
                     continue
                 yield path
+
+
+def _root_archive_prefix(root: Path) -> Path:
+    if root.name:
+        return Path(root.name)
+    sanitized = root.as_posix().strip("/").replace("/", "_")
+    return Path(sanitized or "root")
+
+
+def collect_file_selection(
+    roots: Iterable[Path],
+    exclude_patterns: Iterable[str],
+    *,
+    follow_symlinks: bool = False,
+    max_depth: int | None = None,
+) -> tuple[list[FileSelectionEntry], list[str], int]:
+    selections: list[FileSelectionEntry] = []
+    skipped: list[str] = []
+    total_bytes = 0
+
+    for root in roots:
+        if not root.exists():
+            skipped.append(str(root))
+            continue
+        if root.is_symlink() and not follow_symlinks:
+            skipped.append(str(root))
+            continue
+        root = root.resolve()
+        prefix = _root_archive_prefix(root)
+
+        if root.is_file():
+            if _match_exclude(root, exclude_patterns):
+                continue
+            stat_info = root.stat()
+            size = stat_info.st_size
+            total_bytes += size
+            selections.append(
+                FileSelectionEntry(
+                    original_path=str(root),
+                    archive_path=str(prefix),
+                    is_dir=False,
+                    size_bytes=size,
+                    mode=stat_info.st_mode,
+                    permissions=oct(stat_info.st_mode & 0o777),
+                    uid=getattr(stat_info, "st_uid", None),
+                    gid=getattr(stat_info, "st_gid", None),
+                )
+            )
+            continue
+
+        root_stat = root.stat() if follow_symlinks else root.lstat()
+        selections.append(
+            FileSelectionEntry(
+                original_path=str(root),
+                archive_path=str(prefix),
+                is_dir=True,
+                size_bytes=None,
+                mode=root_stat.st_mode,
+                permissions=oct(root_stat.st_mode & 0o777),
+                uid=getattr(root_stat, "st_uid", None),
+                gid=getattr(root_stat, "st_gid", None),
+            )
+        )
+
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=follow_symlinks):
+            current = Path(dirpath)
+            if max_depth is not None:
+                relative_parts = current.relative_to(root).parts
+                if len(relative_parts) >= max_depth:
+                    dirnames[:] = []
+            dirnames[:] = [d for d in dirnames if not _match_exclude(current / d, exclude_patterns)]
+            for dirname in dirnames:
+                dir_path = current / dirname
+                if dir_path.is_symlink() and not follow_symlinks:
+                    continue
+                archive_path = prefix / dir_path.relative_to(root)
+                dir_stat = dir_path.stat() if follow_symlinks else dir_path.lstat()
+                selections.append(
+                    FileSelectionEntry(
+                        original_path=str(dir_path),
+                        archive_path=str(archive_path),
+                        is_dir=True,
+                        size_bytes=None,
+                        mode=dir_stat.st_mode,
+                        permissions=oct(dir_stat.st_mode & 0o777),
+                        uid=getattr(dir_stat, "st_uid", None),
+                        gid=getattr(dir_stat, "st_gid", None),
+                    )
+                )
+            for filename in filenames:
+                file_path = current / filename
+                if (file_path.is_symlink() and not follow_symlinks) or _match_exclude(
+                    file_path,
+                    exclude_patterns,
+                ):
+                    continue
+                stat_info = file_path.stat() if follow_symlinks else file_path.lstat()
+                size = stat_info.st_size
+                total_bytes += size
+                archive_path = prefix / file_path.relative_to(root)
+                selections.append(
+                    FileSelectionEntry(
+                        original_path=str(file_path),
+                        archive_path=str(archive_path),
+                        is_dir=False,
+                        size_bytes=size,
+                        mode=stat_info.st_mode,
+                        permissions=oct(stat_info.st_mode & 0o777),
+                        uid=getattr(stat_info, "st_uid", None),
+                        gid=getattr(stat_info, "st_gid", None),
+                    )
+                )
+
+    return selections, skipped, total_bytes
 
 
 def scan_junk_files(

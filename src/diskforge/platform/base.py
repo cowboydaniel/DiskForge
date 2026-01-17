@@ -565,6 +565,26 @@ class PlatformBackend(ABC):
         """
 
     @abstractmethod
+    def create_file_backup(
+        self,
+        output_path: Path,
+        selections: list[Path],
+        exclude_patterns: list[str] | None = None,
+        context: JobContext | None = None,
+        compression: str | None = "zstd",
+        compression_level: CompressionLevel | None = None,
+        follow_symlinks: bool = False,
+        max_depth: int | None = None,
+        verify: bool = True,
+        schedule: str | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, ImageInfo | None]:
+        """
+        Create a file-level backup archive.
+        Returns (success, message/error, image_info).
+        """
+
+    @abstractmethod
     def create_system_backup(
         self,
         output_path: Path,
