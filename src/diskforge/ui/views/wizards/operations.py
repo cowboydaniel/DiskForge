@@ -46,6 +46,7 @@ from diskforge.core.models import (
     DynamicVolumeResizeMoveOptions,
     DuplicateRemovalOptions,
     DuplicateScanOptions,
+    FileRecoveryOptions,
     FileRemovalOptions,
     Partition,
     PartitionRole,
@@ -58,6 +59,7 @@ from diskforge.core.models import (
     MoveApplicationOptions,
     ResizeMoveOptions,
     SplitPartitionOptions,
+    ShredOptions,
     WipeOptions,
 )
 from diskforge.core.session import Session
@@ -207,6 +209,59 @@ class DirectoryPage(OutputPathPage):
         path = QFileDialog.getExistingDirectory(self, self._dialog_title)
         if path:
             self._path_input.setText(path)
+
+
+class PathEntryPage(QWizardPage):
+    """Wizard page to enter a file or folder path."""
+
+    def __init__(
+        self,
+        title: str,
+        label: str,
+        file_dialog_title: str,
+        dir_dialog_title: str,
+        parent: QWizard | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setTitle(title)
+        self._file_dialog_title = file_dialog_title
+        self._dir_dialog_title = dir_dialog_title
+
+        layout = QVBoxLayout(self)
+        helper = QLabel(label)
+        helper.setWordWrap(True)
+        layout.addWidget(helper)
+
+        row = QHBoxLayout()
+        self._path_input = QLineEdit()
+        self._path_input.textChanged.connect(self._on_text_changed)
+        browse_file_btn = QPushButton("Browse File...")
+        browse_file_btn.clicked.connect(self._browse_file)
+        browse_dir_btn = QPushButton("Browse Folder...")
+        browse_dir_btn.clicked.connect(self._browse_dir)
+        row.addWidget(self._path_input)
+        row.addWidget(browse_file_btn)
+        row.addWidget(browse_dir_btn)
+        layout.addLayout(row)
+
+    def _browse_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, self._file_dialog_title, "")
+        if path:
+            self._path_input.setText(path)
+
+    def _browse_dir(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, self._dir_dialog_title)
+        if path:
+            self._path_input.setText(path)
+
+    def _on_text_changed(self) -> None:
+        self.completeChanged.emit()
+
+    def isComplete(self) -> bool:
+        return bool(self._path_input.text().strip())
+
+    def path(self) -> str:
+        return self._path_input.text().strip()
 
 
 class OperationResultPage(QWizardPage):
@@ -1526,6 +1581,113 @@ class PartitionRecoveryWizard(DiskForgeWizard):
             output_path=Path(output_path),
         )
         success, message, _artifacts = self._session.platform.recover_partitions(options)
+        return OperationResult(success=success, message=message)
+
+
+class FileRecoveryWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("File Recovery")
+        self._session = session
+        self._status_callback = status_callback
+
+        source_page = PathEntryPage(
+            "Source Path",
+            "Select the device, folder, or file system path to scan.",
+            "Select Source File",
+            "Select Source Folder",
+        )
+
+        options_page = QWizardPage()
+        options_page.setTitle("Recovery Options")
+        options_layout = QVBoxLayout(options_page)
+        self._deep_scan_checkbox = QCheckBox("Use deep scan (slower, more thorough)")
+        self._deep_scan_checkbox.setChecked(True)
+        options_layout.addWidget(self._deep_scan_checkbox)
+
+        output_page = DirectoryPage(
+            "Output Directory",
+            "Select directory to store recovered files.",
+            "Select Recovery Output Directory",
+        )
+
+        result_page = OperationResultPage(
+            "File Recovery",
+            lambda: self._recover_files(source_page.path(), output_page.path()),
+            status_callback,
+            "Running file recovery...",
+        )
+
+        self.addPage(source_page)
+        self.addPage(options_page)
+        self.addPage(output_page)
+        self.addPage(result_page)
+
+    def _recover_files(self, source_path: str, output_path: str) -> OperationResult:
+        options = FileRecoveryOptions(
+            source_path=source_path,
+            output_path=Path(output_path),
+            deep_scan=self._deep_scan_checkbox.isChecked(),
+        )
+        success, message, _artifacts = self._session.platform.recover_files(options)
+        return OperationResult(success=success, message=message)
+
+
+class ShredWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Shred Files/Folders")
+        self._session = session
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        target_page = PathEntryPage(
+            "Target Path",
+            "Select a file or folder to shred.",
+            "Select File to Shred",
+            "Select Folder to Shred",
+        )
+
+        options_page = QWizardPage()
+        options_page.setTitle("Shred Options")
+        options_layout = QFormLayout(options_page)
+        self._passes_input = QLineEdit("3")
+        self._passes_input.textChanged.connect(options_page.completeChanged)
+        self._zero_fill_checkbox = QCheckBox("Zero-fill final pass")
+        self._zero_fill_checkbox.setChecked(True)
+        self._follow_symlinks_checkbox = QCheckBox("Follow symlinks")
+        options_layout.addRow("Passes:", self._passes_input)
+        options_layout.addRow(self._zero_fill_checkbox)
+        options_layout.addRow(self._follow_symlinks_checkbox)
+        options_page.isComplete = lambda: self._passes_input.text().strip().isdigit()  # type: ignore[assignment]
+
+        confirm_page = DynamicConfirmationPage(
+            "Confirm Shred",
+            "This will permanently delete the selected data.",
+            lambda: session.safety.generate_confirmation_string(target_page.path()),
+        )
+
+        result_page = OperationResultPage(
+            "Shred Files/Folders",
+            lambda: self._shred_files(target_page.path()),
+            status_callback,
+            "Shredding files...",
+        )
+
+        self.addPage(target_page)
+        self.addPage(options_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _shred_files(self, target_path: str) -> OperationResult:
+        passes = int(self._passes_input.text().strip() or "1")
+        options = ShredOptions(
+            targets=[target_path],
+            passes=max(1, passes),
+            zero_fill=self._zero_fill_checkbox.isChecked(),
+            follow_symlinks=self._follow_symlinks_checkbox.isChecked(),
+        )
+        success, message = self._session.platform.shred_files(options)
         return OperationResult(success=success, message=message)
 
 

@@ -68,6 +68,8 @@ from diskforge.ui.views.wizards import (
     InitializeDiskWizard,
     WipeWizard,
     PartitionRecoveryWizard,
+    FileRecoveryWizard,
+    ShredWizard,
     DefragDiskWizard,
     DefragPartitionWizard,
     Align4KWizard,
@@ -148,6 +150,8 @@ class MainWindow(QMainWindow):
             "initialize_disk": QAction("Initialize Disk...", self),
             "wipe_device": QAction("Wipe/Secure Erase...", self),
             "partition_recovery": QAction("Partition Recovery...", self),
+            "file_recovery": QAction("File Recovery...", self),
+            "shred_files": QAction("Shred Files/Folders...", self),
             "defrag_disk": QAction("Defragment Disk...", self),
             "defrag_partition": QAction("Defragment Partition...", self),
             "align_4k": QAction("Align 4K...", self),
@@ -194,6 +198,8 @@ class MainWindow(QMainWindow):
             "initialize_disk": DiskForgeIcons.CLONE_DISK,
             "wipe_device": DiskForgeIcons.DELETE_PARTITION,
             "partition_recovery": DiskForgeIcons.RESTORE_BACKUP,
+            "file_recovery": DiskForgeIcons.RESTORE_BACKUP,
+            "shred_files": DiskForgeIcons.DELETE_PARTITION,
             "defrag_disk": DiskForgeIcons.REFRESH,
             "defrag_partition": DiskForgeIcons.REFRESH,
             "align_4k": DiskForgeIcons.CREATE_PARTITION,
@@ -244,6 +250,8 @@ class MainWindow(QMainWindow):
         actions["initialize_disk"].triggered.connect(self._on_initialize_disk)
         actions["wipe_device"].triggered.connect(self._on_wipe_device)
         actions["partition_recovery"].triggered.connect(self._on_partition_recovery)
+        actions["file_recovery"].triggered.connect(self._on_file_recovery)
+        actions["shred_files"].triggered.connect(self._on_shred_files)
         actions["defrag_disk"].triggered.connect(self._on_defrag_disk)
         actions["defrag_partition"].triggered.connect(self._on_defrag_partition)
         actions["align_4k"].triggered.connect(self._on_align_4k)
@@ -397,7 +405,11 @@ class MainWindow(QMainWindow):
                     "File Tools",
                     columns=[
                         [RibbonButton(self._actions["large_files"])],
-                        [RibbonButton(self._actions["duplicate_files"], size="small")],
+                        [
+                            RibbonButton(self._actions["duplicate_files"], size="small"),
+                            RibbonButton(self._actions["file_recovery"], size="small"),
+                        ],
+                        [RibbonButton(self._actions["shred_files"], size="small")],
                     ],
                     separator_after=True,
                 ),
@@ -1522,6 +1534,27 @@ class MainWindow(QMainWindow):
         wizard = PartitionRecoveryWizard(
             self._session,
             inventory.disks,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_file_recovery(self) -> None:
+        """Handle file recovery action."""
+        wizard = FileRecoveryWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_shred_files(self) -> None:
+        """Handle shred files action."""
+        if not self._check_danger_mode():
+            return
+
+        wizard = ShredWizard(
+            self._session,
             self._status_label.setText,
             self,
         )

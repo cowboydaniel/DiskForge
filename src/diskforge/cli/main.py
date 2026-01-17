@@ -1389,6 +1389,144 @@ Passes: {options.passes}""", title="Wipe Device Plan"))
         sys.exit(1)
 
 
+@cli.command("recover-files")
+@click.argument("source")
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Output directory for recovered files",
+)
+@click.option("--deep/--quick", default=True, show_default=True, help="Deep or quick scan")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def recover_files(
+    ctx: click.Context,
+    source: str,
+    output: Path,
+    deep: bool,
+    dry_run: bool,
+) -> None:
+    """Attempt to recover deleted files."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+
+    from diskforge.core.models import FileRecoveryOptions
+
+    options = FileRecoveryOptions(
+        source_path=source,
+        output_path=output,
+        deep_scan=deep,
+    )
+
+    if dry_run:
+        console.print(
+            Panel(
+                f"""[yellow]DRY RUN[/yellow]
+
+Source: {source}
+Output: {output}
+Scan: {"Deep" if deep else "Quick"}""",
+                title="File Recovery Plan",
+            )
+        )
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(source)
+    console.print(f"[yellow]⚠️  This will scan {source} for recoverable files[/yellow]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Running file recovery..."):
+        success, message, artifacts = session.platform.recover_files(options)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps({"success": success, "message": message, "artifacts": artifacts}, indent=2, default=str))
+        if not success:
+            sys.exit(1)
+        return
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+        if artifacts:
+            console.print("\nRecovery artifacts:")
+            for key, path in artifacts.items():
+                console.print(f"  {key}: {path}")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("shred")
+@click.argument("targets", nargs=-1, required=True)
+@click.option("--passes", type=int, default=3, show_default=True, help="Number of overwrite passes")
+@click.option("--no-zero", is_flag=True, help="Skip zero-fill on final pass")
+@click.option("--follow-symlinks", is_flag=True, help="Follow symlinks when shredding")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def shred(
+    ctx: click.Context,
+    targets: tuple[str, ...],
+    passes: int,
+    no_zero: bool,
+    follow_symlinks: bool,
+    dry_run: bool,
+) -> None:
+    """Securely shred files or folders."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import ShredOptions
+
+    options = ShredOptions(
+        targets=list(targets),
+        passes=max(1, passes),
+        zero_fill=not no_zero,
+        follow_symlinks=follow_symlinks,
+    )
+
+    if dry_run:
+        console.print(
+            Panel(
+                f"""[yellow]DRY RUN[/yellow]
+
+Targets: {", ".join(targets)}
+Passes: {options.passes}
+Zero-fill: {"No" if no_zero else "Yes"}
+Follow symlinks: {"Yes" if follow_symlinks else "No"}""",
+                title="Shred Plan",
+            )
+        )
+        return
+
+    confirm_target = targets[0] if len(targets) == 1 else f"{targets[0]} (+{len(targets) - 1} more)"
+    confirm_str = session.safety.generate_confirmation_string(confirm_target)
+    console.print(f"[red]⚠️  This will PERMANENTLY DELETE {confirm_target}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Shredding files..."):
+        success, message = session.platform.shred_files(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
 @cli.command("partition-recovery")
 @click.argument("disk")
 @click.option(
@@ -1447,6 +1585,9 @@ Scan: {"Quick" if quick else "Full"}""", title="Partition Recovery Plan"))
     else:
         console.print(f"[red]✗ {message}[/red]")
         sys.exit(1)
+
+
+cli.add_command(partition_recovery, "recover-partitions")
 
 
 @cli.command("convert-mbr-gpt")

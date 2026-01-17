@@ -132,6 +132,8 @@ class OperationsTreeWidget(QTreeView):
                 ("Defragment Partition", "defrag_partition", self._icon("view-refresh", QStyle.SP_BrowserReload)),
                 ("Wipe/Secure Erase", "wipe_device", self._icon("edit-delete", QStyle.SP_TrashIcon)),
                 ("Partition Recovery", "partition_recovery", self._icon("edit-undo", QStyle.SP_ArrowBack)),
+                ("File Recovery", "file_recovery", self._icon("document-open", QStyle.SP_DirOpenIcon)),
+                ("Shred Files/Folders", "shred_files", self._icon("edit-delete", QStyle.SP_TrashIcon)),
                 ("Convert MBR/GPT", "convert_partition_style", self._icon("object-flip-horizontal", QStyle.SP_ArrowRight)),
                 ("Convert System Disk MBR/GPT", "convert_system_partition_style", self._icon("object-flip-horizontal", QStyle.SP_ArrowRight)),
                 ("Convert Dynamic/Basic", "convert_disk_layout", self._icon("object-flip-horizontal", QStyle.SP_ArrowRight)),
