@@ -9,6 +9,16 @@ from diskforge.ui.views.wizards.operations import (
     CreateBackupWizard,
     RestoreBackupWizard,
     RescueMediaWizard,
+    ResizeMovePartitionWizard,
+    MergePartitionsWizard,
+    SplitPartitionWizard,
+    ExtendPartitionWizard,
+    ShrinkPartitionWizard,
+    WipeWizard,
+    PartitionRecoveryWizard,
+    Align4KWizard,
+    ConvertPartitionStyleWizard,
+    SystemMigrationWizard,
 )
 
 __all__ = [
@@ -20,4 +30,14 @@ __all__ = [
     "CreateBackupWizard",
     "RestoreBackupWizard",
     "RescueMediaWizard",
+    "ResizeMovePartitionWizard",
+    "MergePartitionsWizard",
+    "SplitPartitionWizard",
+    "ExtendPartitionWizard",
+    "ShrinkPartitionWizard",
+    "WipeWizard",
+    "PartitionRecoveryWizard",
+    "Align4KWizard",
+    "ConvertPartitionStyleWizard",
+    "SystemMigrationWizard",
 ]

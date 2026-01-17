@@ -39,7 +39,18 @@ from diskforge.platform.linux.parsers import (
 
 if TYPE_CHECKING:
     from diskforge.core.job import JobContext
-    from diskforge.core.models import FormatOptions, PartitionCreateOptions
+    from diskforge.core.models import (
+        AlignOptions,
+        ConvertDiskOptions,
+        FormatOptions,
+        MergePartitionsOptions,
+        MigrationOptions,
+        PartitionCreateOptions,
+        PartitionRecoveryOptions,
+        ResizeMoveOptions,
+        SplitPartitionOptions,
+        WipeOptions,
+    )
 
 logger = get_logger(__name__)
 
@@ -79,9 +90,15 @@ class LinuxBackend(PlatformBackend):
     LZ4 = "lz4"
     ZSTD = "zstd"
 
+    # Conversion tools
+    SGDISK = "sgdisk"
+
     # ISO creation
     XORRISO = "xorriso"
     MKSQUASHFS = "mksquashfs"
+
+    # Wipe tools
+    SHRED = "shred"
 
     @property
     def name(self) -> str:
@@ -531,6 +548,275 @@ class LinuxBackend(PlatformBackend):
             return False, f"Resize not supported for {partition.filesystem.value}"
 
         return True, f"Resized {partition_path}"
+
+    def resize_move_partition(
+        self,
+        options: ResizeMoveOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Resize or move a partition."""
+        partition = self.get_partition_info(options.partition_path)
+        if not partition:
+            return False, f"Partition not found: {options.partition_path}"
+
+        if options.new_start_sector is not None and options.new_start_sector != partition.start_sector:
+            return False, "Partition move is not supported in the Linux backend yet"
+
+        if options.new_size_bytes is None:
+            return False, "New size is required for resize operations"
+
+        return self.resize_partition(
+            options.partition_path,
+            options.new_size_bytes,
+            context=context,
+            dry_run=dry_run,
+        )
+
+    def merge_partitions(
+        self,
+        options: MergePartitionsOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Merge two partitions."""
+        if context:
+            context.update_progress(message="Preparing partition merge")
+
+        if dry_run:
+            return True, (
+                f"Would merge {options.secondary_partition_path} into "
+                f"{options.primary_partition_path}"
+            )
+
+        return False, "Partition merge is not supported in the Linux backend yet"
+
+    def split_partition(
+        self,
+        options: SplitPartitionOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Split a partition into two."""
+        partition = self.get_partition_info(options.partition_path)
+        if not partition:
+            return False, f"Partition not found: {options.partition_path}"
+
+        if partition.is_mounted:
+            return False, "Partition must be unmounted before splitting"
+
+        if options.split_size_bytes >= partition.size_bytes:
+            return False, "Split size must be smaller than the original partition size"
+
+        if context:
+            context.update_progress(message="Preparing partition split")
+
+        if dry_run:
+            return True, f"Would split {options.partition_path}"
+
+        return False, "Partition split is not supported in the Linux backend yet"
+
+    def extend_partition(
+        self,
+        partition_path: str,
+        new_size_bytes: int,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Extend a partition."""
+        return self.resize_partition(
+            partition_path,
+            new_size_bytes,
+            context=context,
+            dry_run=dry_run,
+        )
+
+    def shrink_partition(
+        self,
+        partition_path: str,
+        new_size_bytes: int,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Shrink a partition."""
+        return self.resize_partition(
+            partition_path,
+            new_size_bytes,
+            context=context,
+            dry_run=dry_run,
+        )
+
+    def wipe_device(
+        self,
+        options: WipeOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Wipe a disk or partition."""
+        target_disk = self.get_disk_info(options.target_path)
+        target_partition = self.get_partition_info(options.target_path)
+
+        if not target_disk and not target_partition:
+            return False, f"Target not found: {options.target_path}"
+
+        if target_disk and target_disk.is_system_disk:
+            return False, "Cannot wipe the system disk"
+
+        if target_disk:
+            for part in target_disk.partitions:
+                if part.is_mounted:
+                    return False, f"Partition {part.device_path} is mounted"
+
+        if target_partition and target_partition.is_mounted:
+            return False, f"Partition is mounted at {target_partition.mountpoint}"
+
+        method = options.method.lower()
+        passes = max(1, options.passes)
+
+        if method == "dod":
+            pass_sources = ["/dev/zero", "/dev/urandom", "/dev/zero"]
+        elif method == "random":
+            pass_sources = ["/dev/urandom"] * passes
+        else:
+            pass_sources = ["/dev/zero"] * passes
+
+        if context:
+            context.update_progress(message=f"Wiping {options.target_path}")
+
+        if dry_run:
+            return True, f"Would wipe {options.target_path} with method {method}"
+
+        for idx, source in enumerate(pass_sources, start=1):
+            if context:
+                context.update_progress(message=f"Wipe pass {idx}/{len(pass_sources)}")
+
+            cmd = [
+                self.DD,
+                f"if={source}",
+                f"of={options.target_path}",
+                "bs=64M",
+                "status=progress",
+                "conv=fdatasync",
+            ]
+            result = self.run_command(cmd, timeout=86400, check=False)
+            if not result.success:
+                return False, f"Wipe failed: {result.stderr}"
+
+        os.sync()
+        return True, f"Wipe completed for {options.target_path}"
+
+    def recover_partitions(
+        self,
+        options: PartitionRecoveryOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Attempt to recover partitions."""
+        artifacts: dict[str, Any] = {}
+
+        if context:
+            context.update_progress(message="Preparing partition recovery")
+
+        if dry_run:
+            return True, f"Would run recovery on {options.disk_path}", artifacts
+
+        return (
+            False,
+            "Partition recovery requires external tooling (e.g., testdisk)",
+            artifacts,
+        )
+
+    def align_partition_4k(
+        self,
+        options: AlignOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Align a partition to 4K boundaries."""
+        inventory = self.get_disk_inventory()
+        result = inventory.get_partition_by_path(options.partition_path)
+        if not result:
+            return False, f"Partition not found: {options.partition_path}"
+
+        disk, partition = result
+        sector_size = disk.sector_size or 512
+        alignment_sectors = max(1, options.alignment_bytes // sector_size)
+
+        if partition.start_sector % alignment_sectors == 0:
+            return True, f"{options.partition_path} is already 4K aligned"
+
+        if context:
+            context.update_progress(message="Alignment requires partition move")
+
+        if dry_run:
+            return True, f"Would align {options.partition_path} to 4K boundaries"
+
+        return False, "Alignment requires moving the partition, which is not supported yet"
+
+    def convert_disk_partition_style(
+        self,
+        options: ConvertDiskOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Convert disk partition style (MBR/GPT)."""
+        if not self._check_tool(self.SGDISK):
+            return False, "sgdisk not found (required for conversion)"
+
+        disk = self.get_disk_info(options.disk_path)
+        if not disk:
+            return False, f"Disk not found: {options.disk_path}"
+
+        if disk.is_system_disk:
+            return False, "Cannot convert the system disk"
+
+        if disk.partition_style == options.target_style:
+            return True, f"Disk already uses {options.target_style.name}"
+
+        if options.target_style == PartitionStyle.GPT:
+            cmd = [self.SGDISK, "--mbrtogpt", options.disk_path]
+        elif options.target_style == PartitionStyle.MBR:
+            cmd = [self.SGDISK, "--gpttombr", options.disk_path]
+        else:
+            return False, "Unsupported target partition style"
+
+        if context:
+            context.update_progress(message=f"Converting {options.disk_path} to {options.target_style.name}")
+
+        if dry_run:
+            return True, f"Would run: {' '.join(cmd)}"
+
+        result = self.run_command(cmd, timeout=300, check=False)
+        if not result.success:
+            return False, f"Conversion failed: {result.stderr}"
+
+        self.run_command(["partprobe", options.disk_path], check=False)
+        return True, f"Converted {options.disk_path} to {options.target_style.name}"
+
+    def migrate_system(
+        self,
+        options: MigrationOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Migrate OS/system to another disk."""
+        source_disk = self.get_disk_info(options.source_disk_path)
+        if not source_disk:
+            return False, f"Source disk not found: {options.source_disk_path}"
+
+        if not source_disk.is_system_disk:
+            return False, "Source disk is not marked as a system disk"
+
+        if context:
+            context.update_progress(message="Starting system migration")
+
+        return self.clone_disk(
+            options.source_disk_path,
+            options.target_disk_path,
+            context=context,
+            verify=True,
+            dry_run=dry_run,
+        )
 
     # ==================== Clone Operations ====================
 

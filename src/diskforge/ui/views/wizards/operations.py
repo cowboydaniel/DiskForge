@@ -23,11 +23,20 @@ from PySide6.QtWidgets import (
 )
 
 from diskforge.core.models import (
+    AlignOptions,
+    ConvertDiskOptions,
     Disk,
     FileSystem,
     FormatOptions,
+    MergePartitionsOptions,
+    MigrationOptions,
     Partition,
     PartitionCreateOptions,
+    PartitionRecoveryOptions,
+    PartitionStyle,
+    ResizeMoveOptions,
+    SplitPartitionOptions,
+    WipeOptions,
 )
 from diskforge.core.session import Session
 
@@ -36,6 +45,16 @@ from diskforge.core.session import Session
 class OperationResult:
     success: bool
     message: str
+
+
+def _parse_size_mib(value: str) -> int | None:
+    try:
+        size_mib = int(value.strip())
+    except ValueError:
+        return None
+    if size_mib <= 0:
+        return None
+    return size_mib * 1024 * 1024
 
 
 class ConfirmationPage(QWizardPage):
@@ -569,4 +588,487 @@ class RescueMediaWizard(DiskForgeWizard):
 
     def _create_rescue_media(self, output_path: str) -> OperationResult:
         success, message, _artifacts = self._session.platform.create_rescue_media(Path(output_path))
+        return OperationResult(success=success, message=message)
+
+
+class ResizeMovePartitionWizard(DiskForgeWizard):
+    def __init__(self, session: Session, partition: Partition, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Resize/Move Partition")
+        self._session = session
+        self._partition = partition
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        size_page = QWizardPage()
+        size_page.setTitle("Resize/Move Settings")
+        size_layout = QFormLayout(size_page)
+        self._size_input = QLineEdit(str(partition.size_bytes // (1024 * 1024)))
+        self._size_input.textChanged.connect(size_page.completeChanged)
+        self._start_input = QLineEdit()
+        self._start_input.setPlaceholderText("Leave blank to keep current")
+        size_layout.addRow("New size (MiB):", self._size_input)
+        size_layout.addRow("New start sector:", self._start_input)
+        size_layout.addRow(QLabel(f"Target partition: {partition.device_path}"))
+
+        def is_complete() -> bool:
+            return _parse_size_mib(self._size_input.text()) is not None
+
+        size_page.isComplete = is_complete  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Resize/Move",
+            f"This will modify {partition.device_path}.",
+            session.safety.generate_confirmation_string(partition.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Resize/Move Partition",
+            self._resize_move_partition,
+            status_callback,
+            f"Resizing {partition.device_path}...",
+        )
+
+        self.addPage(size_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _resize_move_partition(self) -> OperationResult:
+        size_bytes = _parse_size_mib(self._size_input.text()) or 0
+        start_text = self._start_input.text().strip()
+        start_sector = int(start_text) if start_text else None
+        options = ResizeMoveOptions(
+            partition_path=self._partition.device_path,
+            new_size_bytes=size_bytes,
+            new_start_sector=start_sector,
+        )
+        success, message = self._session.platform.resize_move_partition(options)
+        return OperationResult(success=success, message=message)
+
+
+class MergePartitionsWizard(DiskForgeWizard):
+    def __init__(self, session: Session, partitions: Iterable[Partition], status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Merge Partitions")
+        self._session = session
+        self._partitions = list(partitions)
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        select_page = QWizardPage()
+        select_page.setTitle("Select Partitions")
+        select_layout = QFormLayout(select_page)
+        self._primary_combo = QComboBox()
+        self._secondary_combo = QComboBox()
+        for partition in self._partitions:
+            self._primary_combo.addItem(partition.device_path, partition.device_path)
+            self._secondary_combo.addItem(partition.device_path, partition.device_path)
+        select_layout.addRow("Primary partition:", self._primary_combo)
+        select_layout.addRow("Secondary partition:", self._secondary_combo)
+
+        confirm_page = ConfirmationPage(
+            "Confirm Merge",
+            "This will merge the secondary partition into the primary partition.",
+            session.safety.generate_confirmation_string(self._primary_combo.currentData()),
+        )
+        self._primary_combo.currentIndexChanged.connect(
+            lambda: confirm_page.set_confirmation(
+                session.safety.generate_confirmation_string(self._primary_combo.currentData())
+            )
+        )
+
+        result_page = OperationResultPage(
+            "Merge Partitions",
+            self._merge_partitions,
+            status_callback,
+            "Merging partitions...",
+        )
+
+        self.addPage(select_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _merge_partitions(self) -> OperationResult:
+        options = MergePartitionsOptions(
+            primary_partition_path=self._primary_combo.currentData(),
+            secondary_partition_path=self._secondary_combo.currentData(),
+        )
+        success, message = self._session.platform.merge_partitions(options)
+        return OperationResult(success=success, message=message)
+
+
+class SplitPartitionWizard(DiskForgeWizard):
+    def __init__(self, session: Session, partition: Partition, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Split Partition")
+        self._session = session
+        self._partition = partition
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        split_page = QWizardPage()
+        split_page.setTitle("Split Settings")
+        split_layout = QFormLayout(split_page)
+        self._split_size_input = QLineEdit(str(partition.size_bytes // (1024 * 1024) // 2))
+        self._split_size_input.textChanged.connect(split_page.completeChanged)
+        self._filesystem_combo = QComboBox()
+        self._filesystem_combo.addItems(["ext4", "xfs", "btrfs", "ntfs", "fat32"])
+        self._label_input = QLineEdit()
+        split_layout.addRow("New partition size (MiB):", self._split_size_input)
+        split_layout.addRow("Filesystem:", self._filesystem_combo)
+        split_layout.addRow("Label:", self._label_input)
+
+        split_page.isComplete = lambda: _parse_size_mib(self._split_size_input.text()) is not None  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Split",
+            f"This will split {partition.device_path}.",
+            session.safety.generate_confirmation_string(partition.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Split Partition",
+            self._split_partition,
+            status_callback,
+            f"Splitting {partition.device_path}...",
+        )
+
+        self.addPage(split_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _split_partition(self) -> OperationResult:
+        size_bytes = _parse_size_mib(self._split_size_input.text()) or 0
+        fs_map = {
+            "ext4": FileSystem.EXT4,
+            "xfs": FileSystem.XFS,
+            "btrfs": FileSystem.BTRFS,
+            "ntfs": FileSystem.NTFS,
+            "fat32": FileSystem.FAT32,
+        }
+        filesystem = fs_map.get(self._filesystem_combo.currentText())
+        options = SplitPartitionOptions(
+            partition_path=self._partition.device_path,
+            split_size_bytes=size_bytes,
+            filesystem=filesystem,
+            label=self._label_input.text().strip() or None,
+        )
+        success, message = self._session.platform.split_partition(options)
+        return OperationResult(success=success, message=message)
+
+
+class ExtendPartitionWizard(DiskForgeWizard):
+    def __init__(self, session: Session, partition: Partition, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Extend Partition")
+        self._session = session
+        self._partition = partition
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        extend_page = QWizardPage()
+        extend_page.setTitle("Extend Settings")
+        extend_layout = QFormLayout(extend_page)
+        self._size_input = QLineEdit(str(partition.size_bytes // (1024 * 1024)))
+        self._size_input.textChanged.connect(extend_page.completeChanged)
+        extend_layout.addRow("New size (MiB):", self._size_input)
+        extend_layout.addRow(QLabel(f"Target partition: {partition.device_path}"))
+        extend_page.isComplete = lambda: _parse_size_mib(self._size_input.text()) is not None  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Extend",
+            f"This will extend {partition.device_path}.",
+            session.safety.generate_confirmation_string(partition.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Extend Partition",
+            self._extend_partition,
+            status_callback,
+            f"Extending {partition.device_path}...",
+        )
+
+        self.addPage(extend_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _extend_partition(self) -> OperationResult:
+        size_bytes = _parse_size_mib(self._size_input.text()) or 0
+        success, message = self._session.platform.extend_partition(
+            self._partition.device_path,
+            size_bytes,
+        )
+        return OperationResult(success=success, message=message)
+
+
+class ShrinkPartitionWizard(DiskForgeWizard):
+    def __init__(self, session: Session, partition: Partition, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Shrink Partition")
+        self._session = session
+        self._partition = partition
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        shrink_page = QWizardPage()
+        shrink_page.setTitle("Shrink Settings")
+        shrink_layout = QFormLayout(shrink_page)
+        self._size_input = QLineEdit(str(partition.size_bytes // (1024 * 1024)))
+        self._size_input.textChanged.connect(shrink_page.completeChanged)
+        shrink_layout.addRow("New size (MiB):", self._size_input)
+        shrink_layout.addRow(QLabel(f"Target partition: {partition.device_path}"))
+        shrink_page.isComplete = lambda: _parse_size_mib(self._size_input.text()) is not None  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Shrink",
+            f"This will shrink {partition.device_path}.",
+            session.safety.generate_confirmation_string(partition.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Shrink Partition",
+            self._shrink_partition,
+            status_callback,
+            f"Shrinking {partition.device_path}...",
+        )
+
+        self.addPage(shrink_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _shrink_partition(self) -> OperationResult:
+        size_bytes = _parse_size_mib(self._size_input.text()) or 0
+        success, message = self._session.platform.shrink_partition(
+            self._partition.device_path,
+            size_bytes,
+        )
+        return OperationResult(success=success, message=message)
+
+
+class WipeWizard(DiskForgeWizard):
+    def __init__(self, session: Session, target_path: str, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Wipe/Secure Erase")
+        self._session = session
+        self._target_path = target_path
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        wipe_page = QWizardPage()
+        wipe_page.setTitle("Wipe Method")
+        wipe_layout = QFormLayout(wipe_page)
+        self._method_combo = QComboBox()
+        self._method_combo.addItems(["zero", "random", "dod"])
+        self._passes_input = QLineEdit("1")
+        self._passes_input.textChanged.connect(wipe_page.completeChanged)
+        wipe_layout.addRow("Method:", self._method_combo)
+        wipe_layout.addRow("Passes:", self._passes_input)
+        wipe_layout.addRow(QLabel(f"Target: {target_path}"))
+        wipe_page.isComplete = lambda: self._passes_input.text().strip().isdigit()  # type: ignore[assignment]
+
+        confirm_page = ConfirmationPage(
+            "Confirm Wipe",
+            f"This will ERASE ALL DATA on {target_path}.",
+            session.safety.generate_confirmation_string(target_path),
+        )
+
+        result_page = OperationResultPage(
+            "Wipe Device",
+            self._wipe_device,
+            status_callback,
+            f"Wiping {target_path}...",
+        )
+
+        self.addPage(wipe_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _wipe_device(self) -> OperationResult:
+        passes = int(self._passes_input.text().strip() or "1")
+        options = WipeOptions(
+            target_path=self._target_path,
+            method=self._method_combo.currentText(),
+            passes=passes,
+        )
+        success, message = self._session.platform.wipe_device(options)
+        return OperationResult(success=success, message=message)
+
+
+class PartitionRecoveryWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disks: Iterable[Disk], status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Partition Recovery")
+        self._session = session
+        self._disks = list(disks)
+        self._status_callback = status_callback
+
+        select_page = QWizardPage()
+        select_page.setTitle("Select Disk")
+        select_layout = QFormLayout(select_page)
+        self._disk_combo = QComboBox()
+        for disk in self._disks:
+            self._disk_combo.addItem(f"{disk.device_path} ({disk.model})", disk.device_path)
+        select_layout.addRow("Disk:", self._disk_combo)
+
+        output_page = DirectoryPage(
+            "Output Directory",
+            "Select directory to store recovery logs.",
+            "Select Recovery Output Directory",
+        )
+
+        result_page = OperationResultPage(
+            "Partition Recovery",
+            lambda: self._recover_partitions(output_page.path()),
+            status_callback,
+            "Running partition recovery...",
+        )
+
+        self.addPage(select_page)
+        self.addPage(output_page)
+        self.addPage(result_page)
+
+    def _recover_partitions(self, output_path: str) -> OperationResult:
+        options = PartitionRecoveryOptions(
+            disk_path=self._disk_combo.currentData(),
+            output_path=Path(output_path),
+        )
+        success, message, _artifacts = self._session.platform.recover_partitions(options)
+        return OperationResult(success=success, message=message)
+
+
+class Align4KWizard(DiskForgeWizard):
+    def __init__(self, session: Session, partition: Partition, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Align 4K")
+        self._session = session
+        self._partition = partition
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        info_page = QWizardPage()
+        info_page.setTitle("Alignment")
+        info_layout = QVBoxLayout(info_page)
+        info_layout.addWidget(QLabel(f"Align {partition.device_path} to 4K boundaries."))
+
+        confirm_page = ConfirmationPage(
+            "Confirm Alignment",
+            f"This will realign {partition.device_path}.",
+            session.safety.generate_confirmation_string(partition.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Align 4K",
+            self._align_partition,
+            status_callback,
+            f"Aligning {partition.device_path}...",
+        )
+
+        self.addPage(info_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _align_partition(self) -> OperationResult:
+        options = AlignOptions(partition_path=self._partition.device_path)
+        success, message = self._session.platform.align_partition_4k(options)
+        return OperationResult(success=success, message=message)
+
+
+class ConvertPartitionStyleWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Convert MBR/GPT")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        style_page = QWizardPage()
+        style_page.setTitle("Target Style")
+        style_layout = QFormLayout(style_page)
+        self._style_combo = QComboBox()
+        self._style_combo.addItem("GPT", PartitionStyle.GPT)
+        self._style_combo.addItem("MBR", PartitionStyle.MBR)
+        style_layout.addRow("Convert to:", self._style_combo)
+        style_layout.addRow(QLabel(f"Target disk: {disk.device_path}"))
+
+        confirm_page = ConfirmationPage(
+            "Confirm Conversion",
+            f"This will convert {disk.device_path}.",
+            session.safety.generate_confirmation_string(disk.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Convert Partition Style",
+            self._convert_style,
+            status_callback,
+            f"Converting {disk.device_path}...",
+        )
+
+        self.addPage(style_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _convert_style(self) -> OperationResult:
+        options = ConvertDiskOptions(
+            disk_path=self._disk.device_path,
+            target_style=self._style_combo.currentData(),
+        )
+        success, message = self._session.platform.convert_disk_partition_style(options)
+        return OperationResult(success=success, message=message)
+
+
+class SystemMigrationWizard(DiskForgeWizard):
+    def __init__(
+        self,
+        session: Session,
+        source: Disk,
+        targets: Iterable[Disk],
+        status_callback: Callable[[str], None],
+        parent: QWizard | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("OS/System Migration")
+        self._session = session
+        self._source = source
+        self._targets = list(targets)
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        target_page = QWizardPage()
+        target_page.setTitle("Select Target Disk")
+        target_layout = QFormLayout(target_page)
+        self._target_combo = QComboBox()
+        for disk in self._targets:
+            self._target_combo.addItem(f"{disk.device_path} ({disk.model})", disk.device_path)
+        target_layout.addRow("Target disk:", self._target_combo)
+        target_layout.addRow(QLabel(f"Source disk: {source.device_path}"))
+
+        confirm_page = ConfirmationPage(
+            "Confirm Migration",
+            "This will migrate the system disk to the target disk.",
+            session.safety.generate_confirmation_string(self._target_combo.currentData()),
+        )
+        self._target_combo.currentIndexChanged.connect(
+            lambda: confirm_page.set_confirmation(
+                session.safety.generate_confirmation_string(self._target_combo.currentData())
+            )
+        )
+
+        result_page = OperationResultPage(
+            "OS/System Migration",
+            self._migrate_system,
+            status_callback,
+            "Migrating system disk...",
+        )
+
+        self.addPage(target_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _migrate_system(self) -> OperationResult:
+        options = MigrationOptions(
+            source_disk_path=self._source.device_path,
+            target_disk_path=self._target_combo.currentData(),
+        )
+        success, message = self._session.platform.migrate_system(options)
         return OperationResult(success=success, message=message)
