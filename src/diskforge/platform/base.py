@@ -38,6 +38,12 @@ if TYPE_CHECKING:
         PartitionAttributeOptions,
         InitializeDiskOptions,
         PartitionRecoveryOptions,
+        WinREIntegrationOptions,
+        BootRepairOptions,
+        RebuildMBROptions,
+        UEFIBootOptions,
+        WindowsToGoOptions,
+        WindowsPasswordResetOptions,
         DynamicVolumeResizeMoveOptions,
         FileRemovalOptions,
         FreeSpaceOptions,
@@ -577,6 +583,62 @@ class PlatformBackend(ABC):
         Create bootable rescue media.
         Returns (success, message/error, artifacts).
         """
+
+    # ==================== Boot & Recovery Operations ====================
+
+    @abstractmethod
+    def integrate_recovery_environment(
+        self,
+        options: WinREIntegrationOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Integrate DiskForge into the Windows Recovery Environment."""
+
+    @abstractmethod
+    def repair_boot(
+        self,
+        options: BootRepairOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Repair Windows boot configuration and files."""
+
+    @abstractmethod
+    def rebuild_mbr(
+        self,
+        options: RebuildMBROptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Rebuild the Master Boot Record (MBR)."""
+
+    @abstractmethod
+    def manage_uefi_boot_options(
+        self,
+        options: UEFIBootOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """List or update UEFI boot options."""
+
+    @abstractmethod
+    def create_windows_to_go(
+        self,
+        options: WindowsToGoOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Create a Windows To Go workspace."""
+
+    @abstractmethod
+    def reset_windows_password(
+        self,
+        options: WindowsPasswordResetOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Reset a Windows local account password."""
 
     # ==================== Mount Operations ====================
 

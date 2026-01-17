@@ -68,6 +68,12 @@ if TYPE_CHECKING:
         InitializeDiskOptions,
         PartitionCreateOptions,
         PartitionRecoveryOptions,
+        WinREIntegrationOptions,
+        BootRepairOptions,
+        RebuildMBROptions,
+        UEFIBootOptions,
+        WindowsToGoOptions,
+        WindowsPasswordResetOptions,
         DynamicVolumeResizeMoveOptions,
         DuplicateRemovalOptions,
         DuplicateScanOptions,
@@ -2044,6 +2050,56 @@ class LinuxBackend(PlatformBackend):
 
         except Exception as e:
             return False, f"Failed to create rescue media: {e}", artifacts
+
+    # ==================== Boot & Recovery Operations ====================
+
+    def integrate_recovery_environment(
+        self,
+        options: WinREIntegrationOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        return False, "WinRE integration is only supported on Windows.", {}
+
+    def repair_boot(
+        self,
+        options: BootRepairOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        return False, "Boot repair is only supported on Windows.", {}
+
+    def rebuild_mbr(
+        self,
+        options: RebuildMBROptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        return False, "MBR rebuild is only supported on Windows."
+
+    def manage_uefi_boot_options(
+        self,
+        options: UEFIBootOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        return False, "UEFI boot option management is only supported on Windows.", {}
+
+    def create_windows_to_go(
+        self,
+        options: WindowsToGoOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        return False, "Windows To Go creation is only supported on Windows.", {}
+
+    def reset_windows_password(
+        self,
+        options: WindowsPasswordResetOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        return False, "Windows password reset is only supported on Windows."
 
     def _generate_grub_config(self) -> str:
         """Generate GRUB configuration for rescue ISO."""

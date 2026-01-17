@@ -43,6 +43,13 @@ def get_session(ctx: click.Context) -> Session:
     return ctx.obj["session"]
 
 
+def require_platform(session: Session, platform_name: str, feature: str) -> None:
+    """Ensure the current platform matches the required platform."""
+    if session.platform.name != platform_name:
+        console.print(f"[red]{feature} is only available on {platform_name}.[/red]")
+        sys.exit(1)
+
+
 @click.group()
 @click.version_option(version=__version__, prog_name="DiskForge")
 @click.option(
@@ -2361,6 +2368,330 @@ def rescue(ctx: click.Context, output: Path, dry_run: bool) -> None:
             console.print("\nCreated files:")
             for key, path in artifacts.items():
                 console.print(f"  {key}: {path}")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("integrate-winre")
+@click.argument("source", type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--mount-path",
+    type=click.Path(path_type=Path),
+    default=Path("C:\\WinRE"),
+    show_default=True,
+    help="Temporary mount path for WinRE image",
+)
+@click.option(
+    "--target-subdir",
+    default="DiskForge",
+    show_default=True,
+    help="Folder name inside WinRE System32",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def integrate_winre(
+    ctx: click.Context,
+    source: Path,
+    mount_path: Path,
+    target_subdir: str,
+    dry_run: bool,
+) -> None:
+    """Integrate DiskForge scripts into Windows Recovery Environment."""
+    session = get_session(ctx)
+    require_platform(session, "windows", "WinRE integration")
+
+    from diskforge.core.models import WinREIntegrationOptions
+
+    options = WinREIntegrationOptions(
+        source_path=source,
+        mount_path=mount_path,
+        target_subdir=target_subdir,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Source: {source}
+Mount path: {mount_path}
+Target subdir: {target_subdir}""", title="WinRE Integration Plan"))
+        return
+
+    with console.status("Integrating into WinRE..."):
+        success, message, artifacts = session.platform.integrate_recovery_environment(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+        if artifacts:
+            console.print("\nArtifacts:")
+            for key, value in artifacts.items():
+                console.print(f"  {key}: {value}")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("boot-repair")
+@click.option(
+    "--system-root",
+    type=click.Path(path_type=Path),
+    default=Path("C:\\Windows"),
+    show_default=True,
+    help="Windows system root used for BCDBoot",
+)
+@click.option("--fix-mbr/--no-fix-mbr", default=True, show_default=True, help="Run bootrec /fixmbr")
+@click.option("--fix-boot/--no-fix-boot", default=True, show_default=True, help="Run bootrec /fixboot")
+@click.option("--rebuild-bcd/--no-rebuild-bcd", default=True, show_default=True, help="Rebuild BCD store")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def boot_repair(
+    ctx: click.Context,
+    system_root: Path,
+    fix_mbr: bool,
+    fix_boot: bool,
+    rebuild_bcd: bool,
+    dry_run: bool,
+) -> None:
+    """Run boot repair commands (Windows/WinRE)."""
+    session = get_session(ctx)
+    require_platform(session, "windows", "Boot repair")
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import BootRepairOptions
+
+    options = BootRepairOptions(
+        system_root=system_root,
+        fix_mbr=fix_mbr,
+        fix_boot=fix_boot,
+        rebuild_bcd=rebuild_bcd,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+System root: {system_root}
+Fix MBR: {fix_mbr}
+Fix boot: {fix_boot}
+Rebuild BCD: {rebuild_bcd}""", title="Boot Repair Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string("boot-repair")
+    console.print("[red]⚠️  This will modify boot configuration[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Running boot repair..."):
+        success, message, artifacts = session.platform.repair_boot(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+        if artifacts:
+            console.print("\nCommand output:")
+            for key, value in artifacts.items():
+                console.print(f"  {key}: {value.get('stderr') or value.get('stdout')}")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("rebuild-mbr")
+@click.option("--fix-boot/--no-fix-boot", default=True, show_default=True, help="Run bootrec /fixboot")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def rebuild_mbr(ctx: click.Context, fix_boot: bool, dry_run: bool) -> None:
+    """Rebuild the master boot record (Windows/WinRE)."""
+    session = get_session(ctx)
+    require_platform(session, "windows", "MBR rebuild")
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import RebuildMBROptions
+
+    options = RebuildMBROptions(fix_boot=fix_boot)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Fix boot: {fix_boot}""", title="MBR Rebuild Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string("mbr")
+    console.print("[red]⚠️  This will rewrite the MBR boot code[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Rebuilding MBR..."):
+        success, message = session.platform.rebuild_mbr(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("uefi-boot-options")
+@click.option(
+    "--action",
+    type=click.Choice(["list", "set-default"], case_sensitive=False),
+    default="list",
+    show_default=True,
+    help="UEFI boot option action",
+)
+@click.option("--identifier", help="Identifier for set-default action")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def uefi_boot_options(
+    ctx: click.Context,
+    action: str,
+    identifier: str | None,
+    dry_run: bool,
+) -> None:
+    """List or set UEFI firmware boot options (Windows only)."""
+    session = get_session(ctx)
+    require_platform(session, "windows", "UEFI boot option manager")
+
+    from diskforge.core.models import UEFIBootOptions
+
+    options = UEFIBootOptions(action=action, identifier=identifier)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Action: {action}
+Identifier: {identifier or "(none)"}""", title="UEFI Boot Options Plan"))
+        return
+
+    with console.status("Managing UEFI boot options..."):
+        success, message, artifacts = session.platform.manage_uefi_boot_options(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+        output = artifacts.get("output")
+        if output:
+            console.print("\nOutput:")
+            console.print(output)
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("windows-to-go")
+@click.argument("image", type=click.Path(exists=True, path_type=Path))
+@click.argument("target_drive")
+@click.option("--index", "apply_index", default=1, show_default=True, help="Image index to apply")
+@click.option("--label", help="Optional label for the target drive")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def windows_to_go(
+    ctx: click.Context,
+    image: Path,
+    target_drive: str,
+    apply_index: int,
+    label: str | None,
+    dry_run: bool,
+) -> None:
+    """Create a Windows To Go workspace on the target drive."""
+    session = get_session(ctx)
+    require_platform(session, "windows", "Windows To Go")
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import WindowsToGoOptions
+
+    options = WindowsToGoOptions(
+        image_path=image,
+        target_drive=target_drive,
+        apply_index=apply_index,
+        label=label,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Image: {image}
+Target drive: {target_drive}
+Index: {apply_index}
+Label: {label or "(none)"}""", title="Windows To Go Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(target_drive)
+    console.print("[red]⚠️  This will deploy Windows to the target drive[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Creating Windows To Go workspace..."):
+        success, message, artifacts = session.platform.create_windows_to_go(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+        if artifacts:
+            console.print("\nCommand output:")
+            for key, value in artifacts.items():
+                console.print(f"  {key}: {value.get('stderr') or value.get('stdout')}")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("reset-windows-password")
+@click.option("--user", "username", required=True, help="Windows account name")
+@click.option("--new-password", prompt=True, hide_input=True, confirmation_prompt=True)
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def reset_windows_password(
+    ctx: click.Context,
+    username: str,
+    new_password: str,
+    dry_run: bool,
+) -> None:
+    """Reset a Windows local account password."""
+    session = get_session(ctx)
+    require_platform(session, "windows", "Windows password reset")
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import WindowsPasswordResetOptions
+
+    options = WindowsPasswordResetOptions(username=username, new_password=new_password)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+User: {username}""", title="Password Reset Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(username)
+    console.print("[red]⚠️  This will reset the password for the selected account[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Resetting Windows password..."):
+        success, message = session.platform.reset_windows_password(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
     else:
         console.print(f"[red]✗ {message}[/red]")
         sys.exit(1)

@@ -497,6 +497,58 @@ class PartitionRecoveryOptions:
 
 
 @dataclass
+class WinREIntegrationOptions:
+    """Options for integrating DiskForge into Windows Recovery Environment."""
+
+    source_path: Path
+    mount_path: Path = Path("C:\\WinRE")
+    target_subdir: str = "DiskForge"
+
+
+@dataclass
+class BootRepairOptions:
+    """Options for Windows boot repair."""
+
+    system_root: Path = Path("C:\\Windows")
+    fix_mbr: bool = True
+    fix_boot: bool = True
+    rebuild_bcd: bool = True
+
+
+@dataclass
+class RebuildMBROptions:
+    """Options for rebuilding the Master Boot Record."""
+
+    fix_boot: bool = True
+
+
+@dataclass
+class UEFIBootOptions:
+    """Options for managing UEFI boot entries."""
+
+    action: str = "list"
+    identifier: str | None = None
+
+
+@dataclass
+class WindowsToGoOptions:
+    """Options for creating a Windows To Go workspace."""
+
+    image_path: Path
+    target_drive: str
+    apply_index: int = 1
+    label: str | None = None
+
+
+@dataclass
+class WindowsPasswordResetOptions:
+    """Options for resetting a Windows user password."""
+
+    username: str
+    new_password: str
+
+
+@dataclass
 class AlignOptions:
     """Options for alignment operations."""
 

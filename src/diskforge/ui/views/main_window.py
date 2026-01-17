@@ -86,6 +86,12 @@ from diskforge.ui.views.wizards import (
     LargeFilesWizard,
     DuplicateFilesWizard,
     MoveApplicationWizard,
+    IntegrateRecoveryEnvironmentWizard,
+    BootRepairWizard,
+    RebuildMBRWizard,
+    UEFIBootOptionsWizard,
+    WindowsToGoWizard,
+    ResetWindowsPasswordWizard,
 )
 
 
@@ -132,6 +138,12 @@ class MainWindow(QMainWindow):
             "create_backup": QAction("Disk Backup (Advanced)...", self),
             "restore_backup": QAction("Disk Restore...", self),
             "rescue_media": QAction("Make Bootable Media...", self),
+            "integrate_recovery_env": QAction("Integrate to Recovery Environment...", self),
+            "boot_repair": QAction("Boot Repair...", self),
+            "rebuild_mbr": QAction("Rebuild MBR...", self),
+            "uefi_boot_manager": QAction("UEFI BIOS Boot Options...", self),
+            "windows_to_go": QAction("Windows To Go Creator...", self),
+            "reset_windows_password": QAction("Reset Windows Password...", self),
             "danger_mode": QAction("Toggle Danger Mode", self),
             "about": QAction("About DiskForge", self),
             "create_partition": QAction("Create Partition...", self),
@@ -182,6 +194,12 @@ class MainWindow(QMainWindow):
             "create_backup": DiskForgeIcons.CREATE_BACKUP,
             "restore_backup": DiskForgeIcons.RESTORE_BACKUP,
             "rescue_media": DiskForgeIcons.RESCUE_MEDIA,
+            "integrate_recovery_env": DiskForgeIcons.RESCUE_MEDIA,
+            "boot_repair": DiskForgeIcons.REFRESH,
+            "rebuild_mbr": DiskForgeIcons.REFRESH,
+            "uefi_boot_manager": DiskForgeIcons.ABOUT,
+            "windows_to_go": DiskForgeIcons.CLONE_DISK,
+            "reset_windows_password": DiskForgeIcons.DANGER_MODE,
             "danger_mode": DiskForgeIcons.DANGER_MODE,
             "about": DiskForgeIcons.ABOUT,
             "create_partition": DiskForgeIcons.CREATE_PARTITION,
@@ -236,6 +254,12 @@ class MainWindow(QMainWindow):
         actions["create_backup"].triggered.connect(self._on_create_backup)
         actions["restore_backup"].triggered.connect(self._on_restore_backup)
         actions["rescue_media"].triggered.connect(self._on_create_rescue)
+        actions["integrate_recovery_env"].triggered.connect(self._on_integrate_recovery_env)
+        actions["boot_repair"].triggered.connect(self._on_boot_repair)
+        actions["rebuild_mbr"].triggered.connect(self._on_rebuild_mbr)
+        actions["uefi_boot_manager"].triggered.connect(self._on_uefi_boot_manager)
+        actions["windows_to_go"].triggered.connect(self._on_windows_to_go)
+        actions["reset_windows_password"].triggered.connect(self._on_reset_windows_password)
         actions["danger_mode"].triggered.connect(self._toggle_danger_mode)
         actions["about"].triggered.connect(self._show_about)
         actions["create_partition"].triggered.connect(self._on_create_partition)
@@ -474,6 +498,22 @@ class MainWindow(QMainWindow):
                     columns=[
                         [RibbonButton(self._actions["rescue_media"])],
                         [RibbonButton(self._actions["danger_mode"], size="small")],
+                    ],
+                    separator_after=True,
+                ),
+                RibbonGroup(
+                    "Boot & Recovery",
+                    columns=[
+                        [RibbonButton(self._actions["integrate_recovery_env"])],
+                        [
+                            RibbonButton(self._actions["boot_repair"], size="small"),
+                            RibbonButton(self._actions["rebuild_mbr"], size="small"),
+                        ],
+                        [
+                            RibbonButton(self._actions["uefi_boot_manager"], size="small"),
+                            RibbonButton(self._actions["windows_to_go"], size="small"),
+                        ],
+                        [RibbonButton(self._actions["reset_windows_password"], size="small")],
                     ],
                     separator_after=True,
                 ),
@@ -1053,6 +1093,17 @@ class MainWindow(QMainWindow):
                 "Danger Mode Required",
                 "This operation requires Danger Mode to be enabled.\n\n"
                 "Go to the Tools tab and select Toggle Danger Mode to enable it.",
+            )
+            return False
+        return True
+
+    def _require_windows(self, operation: str) -> bool:
+        """Ensure the current platform supports Windows-only operations."""
+        if self._session.platform.name != "windows":
+            QMessageBox.warning(
+                self,
+                "Unsupported Platform",
+                f"{operation} is only available on Windows systems.",
             )
             return False
         return True
@@ -2067,6 +2118,80 @@ class MainWindow(QMainWindow):
     def _on_create_rescue(self) -> None:
         """Handle create rescue media action."""
         wizard = RescueMediaWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_integrate_recovery_env(self) -> None:
+        """Handle WinRE integration action."""
+        if not self._require_windows("WinRE integration"):
+            return
+        wizard = IntegrateRecoveryEnvironmentWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_boot_repair(self) -> None:
+        """Handle boot repair action."""
+        if not self._require_windows("Boot repair"):
+            return
+        if not self._check_danger_mode():
+            return
+        wizard = BootRepairWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_rebuild_mbr(self) -> None:
+        """Handle rebuild MBR action."""
+        if not self._require_windows("MBR rebuild"):
+            return
+        if not self._check_danger_mode():
+            return
+        wizard = RebuildMBRWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_uefi_boot_manager(self) -> None:
+        """Handle UEFI boot options manager action."""
+        if not self._require_windows("UEFI boot options manager"):
+            return
+        wizard = UEFIBootOptionsWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_windows_to_go(self) -> None:
+        """Handle Windows To Go creator action."""
+        if not self._require_windows("Windows To Go"):
+            return
+        if not self._check_danger_mode():
+            return
+        wizard = WindowsToGoWizard(
+            self._session,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_reset_windows_password(self) -> None:
+        """Handle Windows password reset action."""
+        if not self._require_windows("Windows password reset"):
+            return
+        if not self._check_danger_mode():
+            return
+        wizard = ResetWindowsPasswordWizard(
             self._session,
             self._status_label.setText,
             self,

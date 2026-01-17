@@ -13,6 +13,7 @@ import ctypes
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -68,6 +69,12 @@ if TYPE_CHECKING:
         InitializeDiskOptions,
         PartitionCreateOptions,
         PartitionRecoveryOptions,
+        WinREIntegrationOptions,
+        BootRepairOptions,
+        RebuildMBROptions,
+        UEFIBootOptions,
+        WindowsToGoOptions,
+        WindowsPasswordResetOptions,
         DynamicVolumeResizeMoveOptions,
         DuplicateRemovalOptions,
         DuplicateScanOptions,
@@ -1814,6 +1821,243 @@ class WindowsBackend(PlatformBackend):
 
         except Exception as e:
             return False, f"Failed to create rescue package: {e}", artifacts
+
+    # ==================== Boot & Recovery Operations ====================
+
+    def integrate_recovery_environment(
+        self,
+        options: WinREIntegrationOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Integrate DiskForge into Windows Recovery Environment."""
+        artifacts: dict[str, Any] = {}
+
+        source_path = options.source_path
+        mount_path = options.mount_path
+        target_subdir = options.target_subdir
+
+        if dry_run:
+            return (
+                True,
+                f"Would integrate {source_path} into WinRE at {mount_path} (subdir: {target_subdir})",
+                artifacts,
+            )
+
+        if not source_path.exists():
+            return False, f"Source path not found: {source_path}", artifacts
+
+        if context:
+            context.update_progress(message="Mounting WinRE image")
+
+        mount_path.mkdir(parents=True, exist_ok=True)
+        disable_result = self.run_command(["reagentc", "/disable"], check=False)
+        if not disable_result.success:
+            return False, f"reagentc /disable failed: {disable_result.stderr}", artifacts
+
+        mount_result = self.run_command(["reagentc", "/mountre", "/path", str(mount_path)], check=False)
+        if not mount_result.success:
+            return False, f"reagentc /mountre failed: {mount_result.stderr}", artifacts
+
+        target_root = mount_path / "Windows" / "System32" / target_subdir
+        if target_root.exists():
+            shutil.rmtree(target_root, ignore_errors=True)
+
+        shutil.copytree(source_path, target_root)
+        artifacts["target_path"] = str(target_root)
+
+        if context:
+            context.update_progress(message="Committing WinRE changes")
+
+        unmount_result = self.run_command(
+            ["reagentc", "/unmountre", "/path", str(mount_path), "/commit"],
+            check=False,
+        )
+        if not unmount_result.success:
+            return False, f"reagentc /unmountre failed: {unmount_result.stderr}", artifacts
+
+        enable_result = self.run_command(["reagentc", "/enable"], check=False)
+        if not enable_result.success:
+            return False, f"reagentc /enable failed: {enable_result.stderr}", artifacts
+
+        return True, f"Integrated DiskForge into WinRE at {target_root}", artifacts
+
+    def repair_boot(
+        self,
+        options: BootRepairOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Run Windows boot repair commands."""
+        artifacts: dict[str, Any] = {}
+        commands: list[list[str]] = []
+        if options.fix_mbr:
+            commands.append(["bootrec.exe", "/fixmbr"])
+        if options.fix_boot:
+            commands.append(["bootrec.exe", "/fixboot"])
+        if options.rebuild_bcd:
+            commands.append(["bootrec.exe", "/scanos"])
+            commands.append(["bootrec.exe", "/rebuildbcd"])
+            commands.append(["bcdboot.exe", str(options.system_root), "/f", "ALL"])
+
+        if dry_run:
+            plan = "\n".join(" ".join(cmd) for cmd in commands) or "No commands selected"
+            return True, f"Would run:\n{plan}", artifacts
+
+        results = []
+        success = True
+        for cmd in commands:
+            if context:
+                context.update_progress(message=f"Running {' '.join(cmd)}")
+            result = self.run_command(cmd, check=False)
+            artifacts[" ".join(cmd)] = {"stdout": result.stdout, "stderr": result.stderr}
+            if not result.success:
+                success = False
+            results.append(result)
+
+        message = "Boot repair completed" if success else "Boot repair completed with errors"
+        return success, message, artifacts
+
+    def rebuild_mbr(
+        self,
+        options: RebuildMBROptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Rebuild the Master Boot Record (MBR)."""
+        commands = [["bootrec.exe", "/fixmbr"]]
+        if options.fix_boot:
+            commands.append(["bootrec.exe", "/fixboot"])
+
+        if dry_run:
+            return True, "Would run: " + " && ".join(" ".join(cmd) for cmd in commands)
+
+        for cmd in commands:
+            if context:
+                context.update_progress(message=f"Running {' '.join(cmd)}")
+            result = self.run_command(cmd, check=False)
+            if not result.success:
+                return False, f"Command failed: {' '.join(cmd)} - {result.stderr}"
+
+        return True, "MBR rebuilt successfully"
+
+    def manage_uefi_boot_options(
+        self,
+        options: UEFIBootOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """List or update UEFI boot entries."""
+        artifacts: dict[str, Any] = {}
+
+        action = options.action.lower()
+        if action == "list":
+            if dry_run:
+                return True, "Would run: bcdedit /enum firmware", artifacts
+            result = self.run_command(["bcdedit", "/enum", "firmware"], check=False)
+            artifacts["output"] = result.stdout or result.stderr
+            if result.success:
+                return True, "UEFI boot entries listed.", artifacts
+            return False, f"bcdedit failed: {result.stderr}", artifacts
+
+        if action == "set-default":
+            if not options.identifier:
+                return False, "Missing identifier for set-default action.", artifacts
+            if dry_run:
+                return True, f"Would run: bcdedit /default {options.identifier}", artifacts
+            result = self.run_command(["bcdedit", "/default", options.identifier], check=False)
+            artifacts["output"] = result.stdout or result.stderr
+            if result.success:
+                return True, f"Set UEFI default to {options.identifier}", artifacts
+            return False, f"bcdedit failed: {result.stderr}", artifacts
+
+        return False, f"Unsupported UEFI boot option action: {options.action}", artifacts
+
+    def create_windows_to_go(
+        self,
+        options: WindowsToGoOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Create a Windows To Go workspace using DISM + BCDBoot."""
+        artifacts: dict[str, Any] = {}
+        image_path = options.image_path
+        target_drive = options.target_drive.rstrip("\\")
+        apply_dir = f"{target_drive}\\"
+
+        if dry_run:
+            plan = (
+                f"dism.exe /Apply-Image /ImageFile:{image_path} /Index:{options.apply_index} /ApplyDir:{apply_dir}\n"
+                f"bcdboot.exe {apply_dir}Windows /s {target_drive} /f ALL"
+            )
+            if options.label:
+                plan += f"\nSet-Volume -DriveLetter {target_drive.replace(':', '')} -NewFileSystemLabel '{options.label}'"
+            return True, f"Would run:\n{plan}", artifacts
+
+        if not image_path.exists():
+            return False, f"Image not found: {image_path}", artifacts
+
+        if context:
+            context.update_progress(message="Applying Windows image")
+
+        dism_cmd = [
+            "dism.exe",
+            "/Apply-Image",
+            f"/ImageFile:{image_path}",
+            f"/Index:{options.apply_index}",
+            f"/ApplyDir:{apply_dir}",
+        ]
+        dism_result = self.run_command(dism_cmd, timeout=3600, check=False)
+        artifacts["dism"] = {"stdout": dism_result.stdout, "stderr": dism_result.stderr}
+        if not dism_result.success:
+            return False, f"DISM failed: {dism_result.stderr}", artifacts
+
+        if context:
+            context.update_progress(message="Configuring boot files")
+
+        bcd_cmd = [
+            "bcdboot.exe",
+            f"{apply_dir}Windows",
+            "/s",
+            target_drive,
+            "/f",
+            "ALL",
+        ]
+        bcd_result = self.run_command(bcd_cmd, check=False)
+        artifacts["bcdboot"] = {"stdout": bcd_result.stdout, "stderr": bcd_result.stderr}
+        if not bcd_result.success:
+            return False, f"BCDBoot failed: {bcd_result.stderr}", artifacts
+
+        if options.label:
+            drive_letter = target_drive.replace(":", "")
+            label_script = f"Set-Volume -DriveLetter {drive_letter} -NewFileSystemLabel '{options.label}'"
+            label_result = self._run_powershell(label_script)
+            artifacts["label"] = {"stdout": label_result.stdout, "stderr": label_result.stderr}
+            if not label_result.success:
+                return False, f"Failed to set label: {label_result.stderr}", artifacts
+
+        return True, "Windows To Go workspace created.", artifacts
+
+    def reset_windows_password(
+        self,
+        options: WindowsPasswordResetOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Reset a Windows local account password."""
+        if dry_run:
+            return True, f"Would reset password for {options.username}"
+
+        if context:
+            context.update_progress(message=f"Resetting password for {options.username}")
+
+        result = self.run_command(
+            ["net", "user", options.username, options.new_password],
+            check=False,
+        )
+        if result.success:
+            return True, f"Password reset for {options.username}"
+        return False, f"Password reset failed: {result.stderr}"
 
     def _generate_rescue_batch(self) -> str:
         """Generate main rescue batch script."""
