@@ -660,30 +660,19 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
         splitter.setObjectName("mainSplitter")
 
-        sidebar = QFrame()
-        sidebar.setObjectName("sidebar")
-        sidebar.setMinimumWidth(200)
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(14, 14, 14, 14)
-        sidebar_layout.setSpacing(8)
+        # Center area - disk list on top and disk map beneath
+        center_panel = QWidget()
+        center_layout = QVBoxLayout(center_panel)
+        center_layout.setContentsMargins(0, 0, 0, 0)
+        center_layout.setSpacing(0)
 
-        sidebar_title = QLabel("Operations")
-        sidebar_title.setObjectName("sidebarTitle")
-        sidebar_layout.addWidget(sidebar_title)
+        center_splitter = QSplitter(Qt.Vertical)
+        center_splitter.setObjectName("centerSplitter")
 
-        operations_tree = OperationsTreeWidget(self._actions, sidebar)
-        operations_tree.setObjectName("operationsTree")
-        sidebar_layout.addWidget(operations_tree, stretch=1)
-
-        sidebar_layout.addStretch()
-        splitter.addWidget(sidebar)
-
-        # Left panel - disk tree
-        left_panel = QWidget()
-        left_panel.setMinimumWidth(260)
-        left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(12, 12, 12, 12)
-        left_layout.setSpacing(12)
+        disk_list_panel = QWidget()
+        disk_list_layout = QVBoxLayout(disk_list_panel)
+        disk_list_layout.setContentsMargins(12, 12, 12, 12)
+        disk_list_layout.setSpacing(12)
 
         disk_group = QGroupBox("Disks and Partitions")
         disk_layout = QVBoxLayout(disk_group)
@@ -702,21 +691,11 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(1, QHeaderView.Stretch)
 
         disk_layout.addWidget(self._disk_tree)
-        left_layout.addWidget(disk_group)
+        disk_list_layout.addWidget(disk_group)
 
-        splitter.addWidget(left_panel)
-
-        # Right panel - details and progress
-        right_panel = QWidget()
-        right_panel.setMinimumWidth(420)
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(12, 12, 12, 12)
-        right_layout.setSpacing(12)
-
-        # Disk visualization
-        disk_panel = QFrame()
-        disk_panel.setObjectName("diskMapPanel")
-        disk_panel_layout = QVBoxLayout(disk_panel)
+        disk_map_panel = QFrame()
+        disk_map_panel.setObjectName("diskMapPanel")
+        disk_panel_layout = QVBoxLayout(disk_map_panel)
         disk_panel_layout.setContentsMargins(12, 12, 12, 12)
         disk_panel_layout.setSpacing(6)
 
@@ -748,10 +727,31 @@ class MainWindow(QMainWindow):
         self._disk_map.partitionSelected.connect(self._on_partition_selected)
         disk_panel_layout.addWidget(self._disk_map)
 
-        right_layout.addWidget(disk_panel)
+        center_splitter.addWidget(disk_list_panel)
+        center_splitter.addWidget(disk_map_panel)
+        center_splitter.setStretchFactor(0, 1)
+        center_splitter.setStretchFactor(1, 2)
+
+        center_layout.addWidget(center_splitter)
+        splitter.addWidget(center_panel)
+
+        # Right panel - actions and properties
+        right_panel = QWidget()
+        right_panel.setMinimumWidth(320)
+        right_layout = QVBoxLayout(right_panel)
+        right_layout.setContentsMargins(12, 12, 12, 12)
+        right_layout.setSpacing(12)
+
+        actions_group = QGroupBox("Actions")
+        actions_layout = QVBoxLayout(actions_group)
+
+        operations_tree = OperationsTreeWidget(self._actions, actions_group)
+        operations_tree.setObjectName("operationsTree")
+        actions_layout.addWidget(operations_tree)
+        right_layout.addWidget(actions_group)
 
         # Details panel
-        details_group = QGroupBox("Details")
+        details_group = QGroupBox("Selection Details")
         details_layout = QVBoxLayout(details_group)
         self._details_label = QLabel("Select a disk or partition to view details")
         self._details_label.setWordWrap(True)
@@ -828,7 +828,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(right_panel)
 
         # Set splitter sizes
-        splitter.setSizes([220, 380, 640])
+        splitter.setSizes([760, 360])
 
         main_layout.addWidget(splitter)
 
