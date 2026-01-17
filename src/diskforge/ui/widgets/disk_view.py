@@ -35,19 +35,19 @@ from diskforge.core.models import Disk, Partition, FileSystem
 
 
 FILESYSTEM_COLORS = {
-    FileSystem.NTFS: QColor(46, 119, 210),
-    FileSystem.FAT32: QColor(240, 178, 52),
-    FileSystem.EXFAT: QColor(240, 178, 52),
-    FileSystem.EXT4: QColor(84, 179, 109),
-    FileSystem.EXT3: QColor(84, 179, 109),
-    FileSystem.XFS: QColor(147, 95, 204),
-    FileSystem.BTRFS: QColor(240, 140, 48),
-    FileSystem.SWAP: QColor(140, 140, 140),
-    FileSystem.UNKNOWN: QColor(193, 193, 193),
+    FileSystem.NTFS: QColor(116, 170, 225),
+    FileSystem.FAT32: QColor(246, 201, 110),
+    FileSystem.EXFAT: QColor(246, 201, 110),
+    FileSystem.EXT4: QColor(132, 196, 155),
+    FileSystem.EXT3: QColor(132, 196, 155),
+    FileSystem.XFS: QColor(171, 140, 220),
+    FileSystem.BTRFS: QColor(242, 171, 109),
+    FileSystem.SWAP: QColor(170, 176, 185),
+    FileSystem.UNKNOWN: QColor(212, 216, 224),
 }
 
-HIGHLIGHT_COLOR = QColor(47, 132, 214)
-HIGHLIGHT_GLOW = QColor(255, 255, 255, 150)
+HIGHLIGHT_COLOR = QColor(26, 105, 212)
+HIGHLIGHT_GLOW = QColor(255, 255, 255, 140)
 
 
 def filesystem_color(filesystem: FileSystem) -> QColor:
@@ -94,7 +94,7 @@ class PartitionRectItem(QGraphicsRectItem):
 
         # Set color based on filesystem
         self._base_color = filesystem_color(partition.filesystem)
-        self._border_pen = QPen(QColor(78, 92, 124), 1)
+        self._border_pen = QPen(QColor(185, 195, 215), 1)
 
         # Hover effects
         self.setAcceptHoverEvents(True)
@@ -165,8 +165,8 @@ class DiskGraphicsView(QGraphicsView):
         super().__init__(parent)
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
-        self.setMinimumHeight(110)
-        self.setMaximumHeight(170)
+        self.setMinimumHeight(80)
+        self.setMaximumHeight(120)
 
         # Style
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -194,7 +194,7 @@ class DiskGraphicsView(QGraphicsView):
 
         # Get available width
         width = max(self.viewport().width() - 20, 100)
-        height = 70
+        height = 56
         x_offset = 10
         y_offset = 10
 
@@ -336,7 +336,7 @@ class DiskStripPartitionItem(QGraphicsRectItem):
         super().__init__(rect, parent)
         self.partition = partition
         self._base_color = filesystem_color(partition.filesystem)
-        self._border_pen = QPen(QColor(78, 92, 124), 1)
+        self._border_pen = QPen(QColor(185, 195, 215), 1)
         self._label = partition_short_label(partition)
 
         used = partition.used_space_bytes
@@ -398,8 +398,8 @@ class DiskStripGraphicsView(QGraphicsView):
         super().__init__(parent)
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
-        self.setMinimumHeight(40)
-        self.setMaximumHeight(44)
+        self.setMinimumHeight(32)
+        self.setMaximumHeight(36)
 
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -420,9 +420,9 @@ class DiskStripGraphicsView(QGraphicsView):
             return
 
         width = max(self.viewport().width() - 12, 60)
-        height = 22
+        height = 18
         x_offset = 6
-        y_offset = 6
+        y_offset = 4
 
         total_size = self._disk.size_bytes
         if total_size == 0:

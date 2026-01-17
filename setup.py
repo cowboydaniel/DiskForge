@@ -33,7 +33,7 @@ setup(
     license="MIT",
     packages=find_packages(where="src"),
     package_dir={"": "src"},
-    package_data={"diskforge": ["resources/*", "ui/assets/icons/*.svg"]},
+    package_data={"diskforge": ["resources/*", "ui/assets/icons/*.svg", "ui/styles/*.qss"]},
     python_requires=">=3.12",
     install_requires=[
         "PySide6>=6.6.0",
