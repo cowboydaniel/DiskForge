@@ -144,6 +144,9 @@ class MainWindow(QMainWindow):
     def _build_actions(self) -> dict[str, QAction]:
         """Build reusable QAction instances for the ribbon."""
         actions = {
+            "apply": QAction("Apply", self),
+            "undo": QAction("Undo", self),
+            "redo": QAction("Redo", self),
             "refresh": QAction("Refresh", self),
             "exit": QAction("Exit", self),
             "clone": QAction("Clone", self),
@@ -208,6 +211,9 @@ class MainWindow(QMainWindow):
         }
 
         icon_map = {
+            "apply": DiskForgeIcons.CREATE_BACKUP,
+            "undo": DiskForgeIcons.RESTORE_BACKUP,
+            "redo": DiskForgeIcons.REFRESH,
             "refresh": DiskForgeIcons.REFRESH,
             "exit": DiskForgeIcons.EXIT,
             "clone": DiskForgeIcons.CLONE_DISK,
@@ -273,6 +279,10 @@ class MainWindow(QMainWindow):
 
         for action_key, icon_name in icon_map.items():
             actions[action_key].setIcon(DiskForgeIcons.icon(icon_name))
+
+        actions["apply"].setEnabled(False)
+        actions["undo"].setEnabled(False)
+        actions["redo"].setEnabled(False)
 
         actions["refresh"].setShortcut("F5")
         actions["refresh"].triggered.connect(self._refresh_inventory)
@@ -354,6 +364,17 @@ class MainWindow(QMainWindow):
         ribbon.add_tab(
             "Home",
             [
+                RibbonGroup(
+                    "Quick Access",
+                    columns=[
+                        [
+                            RibbonButton(self._actions["apply"], size="small"),
+                            RibbonButton(self._actions["undo"], size="small"),
+                            RibbonButton(self._actions["redo"], size="small"),
+                        ]
+                    ],
+                    separator_after=True,
+                ),
                 RibbonGroup(
                     "Common",
                     columns=[
@@ -806,6 +827,10 @@ class MainWindow(QMainWindow):
         self._pending_widget.setModel(self._pending_model)
         self._pending_widget.applyRequested.connect(self._apply_pending_operations)
         self._pending_widget.undoRequested.connect(self._pending_model.undoLastOperation)
+        self._actions["apply"].triggered.connect(self._pending_widget.applyRequested.emit)
+        self._actions["undo"].triggered.connect(self._pending_model.undoLastOperation)
+        self._pending_model.pendingCountChanged.connect(self._actions["apply"].setEnabled)
+        self._pending_model.pendingCountChanged.connect(self._actions["undo"].setEnabled)
         pending_layout.addWidget(self._pending_widget)
         right_layout.addWidget(pending_group)
 
