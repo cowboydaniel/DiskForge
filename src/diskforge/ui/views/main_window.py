@@ -662,6 +662,7 @@ class MainWindow(QMainWindow):
 
         sidebar = QFrame()
         sidebar.setObjectName("sidebar")
+        sidebar.setMinimumWidth(200)
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(14, 14, 14, 14)
         sidebar_layout.setSpacing(8)
@@ -679,8 +680,10 @@ class MainWindow(QMainWindow):
 
         # Left panel - disk tree
         left_panel = QWidget()
+        left_panel.setMinimumWidth(260)
         left_layout = QVBoxLayout(left_panel)
-        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setContentsMargins(12, 12, 12, 12)
+        left_layout.setSpacing(12)
 
         disk_group = QGroupBox("Disks and Partitions")
         disk_layout = QVBoxLayout(disk_group)
@@ -705,8 +708,10 @@ class MainWindow(QMainWindow):
 
         # Right panel - details and progress
         right_panel = QWidget()
+        right_panel.setMinimumWidth(420)
         right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setContentsMargins(12, 12, 12, 12)
+        right_layout.setSpacing(12)
 
         # Disk visualization
         disk_panel = QFrame()
