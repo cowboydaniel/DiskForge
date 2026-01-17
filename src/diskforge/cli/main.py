@@ -1343,6 +1343,254 @@ Target style: {options.target_style.name}""", title="Convert Partition Style Pla
         sys.exit(1)
 
 
+@cli.command("convert-system-mbr-gpt")
+@click.argument("disk")
+@click.option(
+    "--to",
+    "target_style",
+    type=click.Choice(["gpt", "mbr"], case_sensitive=False),
+    required=True,
+    help="Target partition style",
+)
+@click.option(
+    "--allow-full-os/--no-allow-full-os",
+    default=True,
+    help="Allow conversion while the OS is running (Windows)",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def convert_system_mbr_gpt(
+    ctx: click.Context,
+    disk: str,
+    target_style: str,
+    allow_full_os: bool,
+    dry_run: bool,
+) -> None:
+    """Convert the system disk partition style (MBR/GPT) with safety checks."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import ConvertSystemDiskOptions, PartitionStyle
+
+    style_map = {"gpt": PartitionStyle.GPT, "mbr": PartitionStyle.MBR}
+
+    options = ConvertSystemDiskOptions(
+        disk_path=disk,
+        target_style=style_map[target_style.lower()],
+        allow_full_os=allow_full_os,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Disk: {disk}
+Target style: {options.target_style.name}
+Allow full OS: {allow_full_os}""", title="Convert System Disk Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(disk)
+    console.print(f"[red]⚠️  This will convert system disk {disk} to {options.target_style.name}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Converting system disk partition style..."):
+        success, message = session.platform.convert_system_disk_partition_style(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("convert-filesystem")
+@click.argument("partition")
+@click.option(
+    "--to",
+    "target_fs",
+    type=click.Choice(["ntfs", "fat32"], case_sensitive=False),
+    required=True,
+    help="Target filesystem",
+)
+@click.option(
+    "--allow-format",
+    is_flag=True,
+    help="Allow formatting if conversion requires it",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def convert_filesystem(
+    ctx: click.Context,
+    partition: str,
+    target_fs: str,
+    allow_format: bool,
+    dry_run: bool,
+) -> None:
+    """Convert a partition filesystem between NTFS and FAT32."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import ConvertFilesystemOptions, FileSystem
+
+    fs_map = {"ntfs": FileSystem.NTFS, "fat32": FileSystem.FAT32}
+
+    options = ConvertFilesystemOptions(
+        partition_path=partition,
+        target_filesystem=fs_map[target_fs.lower()],
+        allow_format=allow_format,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+Target filesystem: {options.target_filesystem.value}
+Allow format: {allow_format}""", title="Filesystem Conversion Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will convert {partition} to {options.target_filesystem.value}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Converting filesystem..."):
+        success, message = session.platform.convert_partition_filesystem(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("convert-partition-role")
+@click.argument("partition")
+@click.option(
+    "--to",
+    "target_role",
+    type=click.Choice(["primary", "logical"], case_sensitive=False),
+    required=True,
+    help="Target partition role",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def convert_partition_role(
+    ctx: click.Context,
+    partition: str,
+    target_role: str,
+    dry_run: bool,
+) -> None:
+    """Convert a partition between primary and logical."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import ConvertPartitionRoleOptions, PartitionRole
+
+    role_map = {"primary": PartitionRole.PRIMARY, "logical": PartitionRole.LOGICAL}
+
+    options = ConvertPartitionRoleOptions(
+        partition_path=partition,
+        target_role=role_map[target_role.lower()],
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+Target role: {options.target_role.name}""", title="Partition Role Conversion Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will convert {partition} to {options.target_role.name}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Converting partition role..."):
+        success, message = session.platform.convert_partition_role(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("convert-disk-layout")
+@click.argument("disk")
+@click.option(
+    "--to",
+    "target_layout",
+    type=click.Choice(["basic", "dynamic"], case_sensitive=False),
+    required=True,
+    help="Target disk layout",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def convert_disk_layout(
+    ctx: click.Context,
+    disk: str,
+    target_layout: str,
+    dry_run: bool,
+) -> None:
+    """Convert a disk between basic and dynamic layouts."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import ConvertDiskLayoutOptions, DiskLayout
+
+    layout_map = {"basic": DiskLayout.BASIC, "dynamic": DiskLayout.DYNAMIC}
+
+    options = ConvertDiskLayoutOptions(
+        disk_path=disk,
+        target_layout=layout_map[target_layout.lower()],
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Disk: {disk}
+Target layout: {options.target_layout.name}""", title="Disk Layout Conversion Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(disk)
+    console.print(f"[red]⚠️  This will convert {disk} to {options.target_layout.name}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Converting disk layout..."):
+        success, message = session.platform.convert_disk_layout(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
 @cli.command("migrate-system")
 @click.argument("source")
 @click.argument("target")

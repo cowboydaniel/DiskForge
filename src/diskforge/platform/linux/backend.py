@@ -44,6 +44,10 @@ if TYPE_CHECKING:
     from diskforge.core.models import (
         AlignOptions,
         ConvertDiskOptions,
+        ConvertDiskLayoutOptions,
+        ConvertFilesystemOptions,
+        ConvertPartitionRoleOptions,
+        ConvertSystemDiskOptions,
         FormatOptions,
         MergePartitionsOptions,
         MigrationOptions,
@@ -866,6 +870,49 @@ class LinuxBackend(PlatformBackend):
 
         self.run_command(["partprobe", options.disk_path], check=False)
         return True, f"Converted {options.disk_path} to {options.target_style.name}"
+
+    def convert_system_disk_partition_style(
+        self,
+        options: ConvertSystemDiskOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Convert system disk partition style with safety checks."""
+        disk = self.get_disk_info(options.disk_path)
+        if not disk:
+            return False, f"Disk not found: {options.disk_path}"
+
+        if not disk.is_system_disk:
+            return False, "Selected disk is not marked as a system disk"
+
+        return False, "System disk conversion is not supported on Linux"
+
+    def convert_partition_filesystem(
+        self,
+        options: ConvertFilesystemOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Convert a partition filesystem (NTFS/FAT32)."""
+        return False, "Filesystem conversion is not supported on Linux"
+
+    def convert_partition_role(
+        self,
+        options: ConvertPartitionRoleOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Convert a partition between primary/logical."""
+        return False, "Primary/logical conversion is not supported on Linux"
+
+    def convert_disk_layout(
+        self,
+        options: ConvertDiskLayoutOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Convert disk layout between basic/dynamic."""
+        return False, "Basic/dynamic conversion is not supported on Linux"
 
     def migrate_system(
         self,

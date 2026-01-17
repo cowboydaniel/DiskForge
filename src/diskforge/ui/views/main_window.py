@@ -69,6 +69,10 @@ from diskforge.ui.views.wizards import (
     DefragPartitionWizard,
     Align4KWizard,
     ConvertPartitionStyleWizard,
+    ConvertSystemPartitionStyleWizard,
+    ConvertFilesystemWizard,
+    ConvertPartitionRoleWizard,
+    ConvertDiskLayoutWizard,
     SystemMigrationWizard,
 )
 
@@ -137,6 +141,10 @@ class MainWindow(QMainWindow):
             "defrag_partition": QAction("Defragment Partition...", self),
             "align_4k": QAction("Align 4K...", self),
             "convert_partition_style": QAction("Convert MBR/GPT...", self),
+            "convert_system_partition_style": QAction("Convert System Disk MBR/GPT...", self),
+            "convert_filesystem": QAction("Convert Filesystem (NTFS/FAT32)...", self),
+            "convert_partition_role": QAction("Convert Primary/Logical...", self),
+            "convert_disk_layout": QAction("Convert Dynamic/Basic...", self),
             "migrate_system": QAction("OS/System Migration...", self),
         }
 
@@ -171,6 +179,10 @@ class MainWindow(QMainWindow):
             "defrag_partition": DiskForgeIcons.REFRESH,
             "align_4k": DiskForgeIcons.CREATE_PARTITION,
             "convert_partition_style": DiskForgeIcons.CLONE_DISK,
+            "convert_system_partition_style": DiskForgeIcons.CLONE_DISK,
+            "convert_filesystem": DiskForgeIcons.FORMAT_PARTITION,
+            "convert_partition_role": DiskForgeIcons.CREATE_PARTITION,
+            "convert_disk_layout": DiskForgeIcons.CLONE_DISK,
             "migrate_system": DiskForgeIcons.CLONE_DISK,
         }
 
@@ -209,6 +221,10 @@ class MainWindow(QMainWindow):
         actions["defrag_partition"].triggered.connect(self._on_defrag_partition)
         actions["align_4k"].triggered.connect(self._on_align_4k)
         actions["convert_partition_style"].triggered.connect(self._on_convert_partition_style)
+        actions["convert_system_partition_style"].triggered.connect(self._on_convert_system_partition_style)
+        actions["convert_filesystem"].triggered.connect(self._on_convert_filesystem)
+        actions["convert_partition_role"].triggered.connect(self._on_convert_partition_role)
+        actions["convert_disk_layout"].triggered.connect(self._on_convert_disk_layout)
         actions["migrate_system"].triggered.connect(self._on_migrate_system)
         actions["clone"].triggered.connect(self._on_clone_disk)
         actions["backup"].triggered.connect(self._on_create_backup)
@@ -285,20 +301,30 @@ class MainWindow(QMainWindow):
                             RibbonButton(self._actions["align_4k"], size="small"),
                             RibbonButton(self._actions["defrag_partition"], size="small"),
                         ],
-                        [RibbonButton(self._actions["edit_partition_attributes"], size="small")],
+                        [
+                            RibbonButton(self._actions["edit_partition_attributes"], size="small"),
+                            RibbonButton(self._actions["convert_filesystem"], size="small"),
+                            RibbonButton(self._actions["convert_partition_role"], size="small"),
+                        ],
                     ],
                     separator_after=True,
                 ),
                 RibbonGroup(
                     "Disk Tools",
                     columns=[
-                        [RibbonButton(self._actions["convert_partition_style"])],
+                        [
+                            RibbonButton(self._actions["convert_partition_style"]),
+                            RibbonButton(self._actions["convert_system_partition_style"], size="small"),
+                        ],
                         [
                             RibbonButton(self._actions["defrag_disk"], size="small"),
                             RibbonButton(self._actions["wipe_device"], size="small"),
                             RibbonButton(self._actions["partition_recovery"], size="small"),
                         ],
-                        [RibbonButton(self._actions["initialize_disk"], size="small")],
+                        [
+                            RibbonButton(self._actions["initialize_disk"], size="small"),
+                            RibbonButton(self._actions["convert_disk_layout"], size="small"),
+                        ],
                     ],
                     separator_after=True,
                 ),
@@ -767,6 +793,18 @@ class MainWindow(QMainWindow):
             )
             convert_action.triggered.connect(lambda: self._convert_partition_style(item))
 
+            convert_system_action = menu.addAction(
+                self._actions["convert_system_partition_style"].icon(),
+                "Convert System Disk MBR/GPT...",
+            )
+            convert_system_action.triggered.connect(lambda: self._convert_system_partition_style(item))
+
+            convert_layout_action = menu.addAction(
+                self._actions["convert_disk_layout"].icon(),
+                "Convert Dynamic/Basic...",
+            )
+            convert_layout_action.triggered.connect(lambda: self._convert_disk_layout(item))
+
             wipe_action = menu.addAction(
                 self._actions["wipe_device"].icon(),
                 "Wipe/Secure Erase...",
@@ -855,6 +893,18 @@ class MainWindow(QMainWindow):
                 "Align 4K...",
             )
             align_action.triggered.connect(lambda: self._align_partition(item))
+
+            convert_fs_action = menu.addAction(
+                self._actions["convert_filesystem"].icon(),
+                "Convert Filesystem (NTFS/FAT32)...",
+            )
+            convert_fs_action.triggered.connect(lambda: self._convert_filesystem(item))
+
+            convert_role_action = menu.addAction(
+                self._actions["convert_partition_role"].icon(),
+                "Convert Primary/Logical...",
+            )
+            convert_role_action.triggered.connect(lambda: self._convert_partition_role(item))
 
             wipe_action = menu.addAction(
                 self._actions["wipe_device"].icon(),
@@ -1474,6 +1524,118 @@ class MainWindow(QMainWindow):
         wizard = ConvertPartitionStyleWizard(
             self._session,
             disk,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_convert_system_partition_style(self) -> None:
+        """Handle system disk partition style conversion."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Disk):
+            self._convert_system_partition_style(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+
+    def _convert_system_partition_style(self, disk: Disk) -> None:
+        """Convert a system disk between MBR/GPT with safety checks."""
+        if not self._check_danger_mode():
+            return
+
+        if not disk.is_system_disk:
+            QMessageBox.warning(self, "Not System Disk", "Select the system disk for this conversion.")
+            return
+
+        wizard = ConvertSystemPartitionStyleWizard(
+            self._session,
+            disk,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_convert_disk_layout(self) -> None:
+        """Handle disk layout conversion."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Disk):
+            self._convert_disk_layout(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+
+    def _convert_disk_layout(self, disk: Disk) -> None:
+        """Convert a disk between basic/dynamic."""
+        if not self._check_danger_mode():
+            return
+
+        if disk.is_system_disk:
+            QMessageBox.critical(self, "System Disk", "Cannot convert the system disk layout.")
+            return
+
+        wizard = ConvertDiskLayoutWizard(
+            self._session,
+            disk,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_convert_filesystem(self) -> None:
+        """Handle filesystem conversion action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Partition):
+            self._convert_filesystem(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a partition, not a disk.")
+
+    def _convert_filesystem(self, partition: Partition) -> None:
+        """Convert a partition filesystem between NTFS/FAT32."""
+        if not self._check_danger_mode():
+            return
+
+        wizard = ConvertFilesystemWizard(
+            self._session,
+            partition,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_convert_partition_role(self) -> None:
+        """Handle partition role conversion."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Partition):
+            self._convert_partition_role(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a partition, not a disk.")
+
+    def _convert_partition_role(self, partition: Partition) -> None:
+        """Convert a partition between primary/logical."""
+        if not self._check_danger_mode():
+            return
+
+        wizard = ConvertPartitionRoleWizard(
+            self._session,
+            partition,
             self._status_label.setText,
             self,
         )

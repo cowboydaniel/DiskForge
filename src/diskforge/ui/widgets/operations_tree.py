@@ -81,6 +81,8 @@ class OperationsTreeWidget(QTreeView):
                 ("Merge", "merge_partitions", self._icon("list-add", QStyle.SP_FileDialogNewFolder)),
                 ("Split", "split_partition", self._icon("list-remove", QStyle.SP_TrashIcon)),
                 ("Align 4K", "align_4k", self._icon("view-refresh", QStyle.SP_BrowserReload)),
+                ("Convert Filesystem (NTFS/FAT32)", "convert_filesystem", self._icon("edit-clear", QStyle.SP_DialogResetButton)),
+                ("Convert Primary/Logical", "convert_partition_role", self._icon("object-flip-horizontal", QStyle.SP_ArrowRight)),
                 ("Edit Partition Attributes", "edit_partition_attributes", self._icon("document-edit", QStyle.SP_FileDialogDetailedView)),
             ],
         )
@@ -108,6 +110,8 @@ class OperationsTreeWidget(QTreeView):
                 ("Wipe/Secure Erase", "wipe_device", self._icon("edit-delete", QStyle.SP_TrashIcon)),
                 ("Partition Recovery", "partition_recovery", self._icon("edit-undo", QStyle.SP_ArrowBack)),
                 ("Convert MBR/GPT", "convert_partition_style", self._icon("object-flip-horizontal", QStyle.SP_ArrowRight)),
+                ("Convert System Disk MBR/GPT", "convert_system_partition_style", self._icon("object-flip-horizontal", QStyle.SP_ArrowRight)),
+                ("Convert Dynamic/Basic", "convert_disk_layout", self._icon("object-flip-horizontal", QStyle.SP_ArrowRight)),
                 ("Quick Partition", "quick_partition", self._icon("list-add", QStyle.SP_FileDialogNewFolder)),
                 ("Initialize Disk", "initialize_disk", self._icon("drive-harddisk", QStyle.SP_DriveHDIcon)),
                 ("OS/System Migration", "migrate_system", self._icon("system-run", QStyle.SP_MediaPlay)),

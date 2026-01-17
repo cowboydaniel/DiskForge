@@ -28,7 +28,12 @@ from diskforge.core.models import (
     CloneMode,
     CompressionLevel,
     ConvertDiskOptions,
+    ConvertDiskLayoutOptions,
+    ConvertFilesystemOptions,
+    ConvertPartitionRoleOptions,
+    ConvertSystemDiskOptions,
     Disk,
+    DiskLayout,
     FileSystem,
     FormatOptions,
     MergePartitionsOptions,
@@ -39,6 +44,7 @@ from diskforge.core.models import (
     PartitionAttributeOptions,
     InitializeDiskOptions,
     Partition,
+    PartitionRole,
     PartitionCreateOptions,
     PartitionRecoveryOptions,
     PartitionStyle,
@@ -1467,6 +1473,193 @@ class ConvertPartitionStyleWizard(DiskForgeWizard):
             target_style=self._style_combo.currentData(),
         )
         success, message = self._session.platform.convert_disk_partition_style(options)
+        return OperationResult(success=success, message=message)
+
+
+class ConvertSystemPartitionStyleWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Convert System Disk MBR/GPT")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        style_page = QWizardPage()
+        style_page.setTitle("Target Style")
+        style_layout = QFormLayout(style_page)
+        self._style_combo = QComboBox()
+        self._style_combo.addItem("GPT", PartitionStyle.GPT)
+        self._style_combo.addItem("MBR", PartitionStyle.MBR)
+        style_layout.addRow("Convert to:", self._style_combo)
+        style_layout.addRow(QLabel(f"System disk: {disk.device_path}"))
+
+        self._allow_full_os = QCheckBox("Allow conversion while the OS is running")
+        self._allow_full_os.setChecked(True)
+        style_layout.addRow(self._allow_full_os)
+
+        confirm_page = ConfirmationPage(
+            "Confirm Conversion",
+            f"This will attempt a system disk conversion on {disk.device_path}.",
+            session.safety.generate_confirmation_string(disk.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Convert System Disk",
+            self._convert_style,
+            status_callback,
+            f"Converting system disk {disk.device_path}...",
+        )
+
+        self.addPage(style_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _convert_style(self) -> OperationResult:
+        options = ConvertSystemDiskOptions(
+            disk_path=self._disk.device_path,
+            target_style=self._style_combo.currentData(),
+            allow_full_os=self._allow_full_os.isChecked(),
+        )
+        success, message = self._session.platform.convert_system_disk_partition_style(options)
+        return OperationResult(success=success, message=message)
+
+
+class ConvertFilesystemWizard(DiskForgeWizard):
+    def __init__(self, session: Session, partition: Partition, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Convert Filesystem")
+        self._session = session
+        self._partition = partition
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        target_page = QWizardPage()
+        target_page.setTitle("Target Filesystem")
+        target_layout = QFormLayout(target_page)
+        self._fs_combo = QComboBox()
+        self._fs_combo.addItem("NTFS", FileSystem.NTFS)
+        self._fs_combo.addItem("FAT32", FileSystem.FAT32)
+        target_layout.addRow("Convert to:", self._fs_combo)
+        target_layout.addRow(QLabel(f"Partition: {partition.device_path}"))
+        target_layout.addRow(QLabel(f"Current filesystem: {partition.filesystem.value}"))
+
+        self._allow_format = QCheckBox("Allow formatting if conversion requires it (data loss)")
+        self._allow_format.setChecked(False)
+        target_layout.addRow(self._allow_format)
+
+        confirm_page = ConfirmationPage(
+            "Confirm Conversion",
+            f"This will convert the filesystem on {partition.device_path}.",
+            session.safety.generate_confirmation_string(partition.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Convert Filesystem",
+            self._convert_filesystem,
+            status_callback,
+            f"Converting filesystem on {partition.device_path}...",
+        )
+
+        self.addPage(target_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _convert_filesystem(self) -> OperationResult:
+        options = ConvertFilesystemOptions(
+            partition_path=self._partition.device_path,
+            target_filesystem=self._fs_combo.currentData(),
+            allow_format=self._allow_format.isChecked(),
+        )
+        success, message = self._session.platform.convert_partition_filesystem(options)
+        return OperationResult(success=success, message=message)
+
+
+class ConvertPartitionRoleWizard(DiskForgeWizard):
+    def __init__(self, session: Session, partition: Partition, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Convert Primary/Logical")
+        self._session = session
+        self._partition = partition
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        target_page = QWizardPage()
+        target_page.setTitle("Target Role")
+        target_layout = QFormLayout(target_page)
+        self._role_combo = QComboBox()
+        self._role_combo.addItem("Primary", PartitionRole.PRIMARY)
+        self._role_combo.addItem("Logical", PartitionRole.LOGICAL)
+        target_layout.addRow("Convert to:", self._role_combo)
+        target_layout.addRow(QLabel(f"Partition: {partition.device_path}"))
+
+        confirm_page = ConfirmationPage(
+            "Confirm Conversion",
+            f"This will convert the role of {partition.device_path}.",
+            session.safety.generate_confirmation_string(partition.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Convert Partition Role",
+            self._convert_role,
+            status_callback,
+            f"Converting {partition.device_path} role...",
+        )
+
+        self.addPage(target_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _convert_role(self) -> OperationResult:
+        options = ConvertPartitionRoleOptions(
+            partition_path=self._partition.device_path,
+            target_role=self._role_combo.currentData(),
+        )
+        success, message = self._session.platform.convert_partition_role(options)
+        return OperationResult(success=success, message=message)
+
+
+class ConvertDiskLayoutWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Convert Disk Layout")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+
+        target_page = QWizardPage()
+        target_page.setTitle("Target Layout")
+        target_layout = QFormLayout(target_page)
+        self._layout_combo = QComboBox()
+        self._layout_combo.addItem("Basic", DiskLayout.BASIC)
+        self._layout_combo.addItem("Dynamic", DiskLayout.DYNAMIC)
+        target_layout.addRow("Convert to:", self._layout_combo)
+        target_layout.addRow(QLabel(f"Disk: {disk.device_path}"))
+
+        confirm_page = ConfirmationPage(
+            "Confirm Conversion",
+            f"This will convert the disk layout of {disk.device_path}.",
+            session.safety.generate_confirmation_string(disk.device_path),
+        )
+
+        result_page = OperationResultPage(
+            "Convert Disk Layout",
+            self._convert_layout,
+            status_callback,
+            f"Converting disk layout on {disk.device_path}...",
+        )
+
+        self.addPage(target_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _convert_layout(self) -> OperationResult:
+        options = ConvertDiskLayoutOptions(
+            disk_path=self._disk.device_path,
+            target_layout=self._layout_combo.currentData(),
+        )
+        success, message = self._session.platform.convert_disk_layout(options)
         return OperationResult(success=success, message=message)
 
 
