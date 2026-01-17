@@ -169,6 +169,7 @@ class AomeiTheme:
         #headerBar {{
             background-color: {self.colors.brand_primary};
             border-bottom: 1px solid {self.colors.brand_primary_dark};
+            min-height: 32px;
         }}
         #headerBar QLabel {{
             color: {self.colors.text_inverted};
@@ -176,26 +177,23 @@ class AomeiTheme:
         #appLogo {{
             background-color: {self.colors.text_inverted};
             color: {self.colors.brand_primary};
-            border-radius: 8px;
-            font-size: 16px;
+            border-radius: 6px;
+            font-size: 12px;
             font-weight: {self.typography.title_weight};
         }}
         #appTitle {{
             color: {self.colors.text_inverted};
-            font-size: {self.typography.title_size_px}px;
+            font-size: 14px;
             font-weight: {self.typography.title_weight};
             letter-spacing: 0.4px;
-        }}
-        #appSubtitle {{
-            color: {self.colors.brand_primary_soft};
-            font-size: {self.typography.subtitle_size_px}px;
-            font-weight: {self.typography.subtitle_weight};
         }}
         #headerActionButton {{
             color: {self.colors.text_inverted};
             border: 1px solid transparent;
-            padding: 4px 10px;
-            border-radius: {self.radii.button_px}px;
+            padding: 2px;
+            min-width: 24px;
+            min-height: 24px;
+            border-radius: 4px;
             text-align: center;
         }}
         #headerActionButton:hover {{
@@ -210,24 +208,26 @@ class AomeiTheme:
             color: {self.colors.text_muted};
         }}
         #versionBadge {{
-            background-color: {self.colors.text_inverted};
-            color: {self.colors.brand_primary_dark};
-            padding: 2px 8px;
+            background-color: {self.colors.brand_primary_dark};
+            color: {self.colors.text_inverted};
+            padding: 1px 6px;
             border-radius: {self.radii.badge_px}px;
             font-weight: {self.typography.badge_weight};
+            min-height: 18px;
         }}
         #modeBadge {{
-            background-color: {self.colors.brand_accent};
+            background-color: {self.colors.brand_primary_dark};
             color: {self.colors.text_inverted};
-            padding: {self.spacing.badge_padding};
+            padding: 1px 6px;
             border-radius: {self.radii.badge_px}px;
             font-weight: {self.typography.badge_weight};
+            min-height: 18px;
         }}
         #modeBadge[danger="true"] {{
             background-color: {self.colors.brand_danger};
         }}
         #modeBadge[danger="false"] {{
-            background-color: {self.colors.brand_accent};
+            background-color: {self.colors.brand_primary_dark};
         }}
         #sidebar {{
             background-color: {self.colors.surface_alt};
