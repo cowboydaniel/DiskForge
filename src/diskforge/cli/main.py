@@ -332,6 +332,566 @@ def delete_partition(ctx: click.Context, partition: str, dry_run: bool) -> None:
         sys.exit(1)
 
 
+@cli.command("resize-move")
+@click.argument("partition")
+@click.option("--size", "-s", required=True, help="New partition size (e.g., 10G, 500M)")
+@click.option("--start-sector", type=int, help="New start sector")
+@click.option("--align-mb", type=int, default=1, show_default=True, help="Alignment in MB")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def resize_move_partition(
+    ctx: click.Context,
+    partition: str,
+    size: str,
+    start_sector: int | None,
+    align_mb: int,
+    dry_run: bool,
+) -> None:
+    """Resize or move a partition."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required for this operation[/red]")
+        sys.exit(1)
+
+    size_bytes = parse_size(size)
+    if size_bytes is None:
+        console.print(f"[red]Invalid size format: {size}[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import ResizeMoveOptions
+
+    options = ResizeMoveOptions(
+        partition_path=partition,
+        new_size_bytes=size_bytes,
+        new_start_sector=start_sector,
+        align_to_mb=align_mb,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+New size: {humanize.naturalsize(size_bytes, binary=True)}
+Start sector: {start_sector or "(unchanged)"}
+Align: {align_mb} MB""", title="Resize/Move Partition Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will resize/move {partition}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Resizing/moving partition..."):
+        success, message = session.platform.resize_move_partition(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("merge-partitions")
+@click.argument("primary_partition")
+@click.argument("secondary_partition")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def merge_partitions(
+    ctx: click.Context,
+    primary_partition: str,
+    secondary_partition: str,
+    dry_run: bool,
+) -> None:
+    """Merge two partitions."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required for this operation[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import MergePartitionsOptions
+
+    options = MergePartitionsOptions(
+        primary_partition_path=primary_partition,
+        secondary_partition_path=secondary_partition,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Primary: {primary_partition}
+Secondary: {secondary_partition}""", title="Merge Partitions Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(primary_partition)
+    console.print(f"[red]⚠️  This will merge {secondary_partition} into {primary_partition}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Merging partitions..."):
+        success, message = session.platform.merge_partitions(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("split-partition")
+@click.argument("partition")
+@click.option("--size", "-s", required=True, help="Size of new partition (e.g., 10G, 500M)")
+@click.option(
+    "--filesystem",
+    "-f",
+    type=click.Choice(["ext4", "ext3", "xfs", "btrfs", "ntfs", "fat32", "exfat"]),
+    help="Filesystem type for the new partition",
+)
+@click.option("--label", "-l", help="Label for the new partition")
+@click.option("--align-mb", type=int, default=1, show_default=True, help="Alignment in MB")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def split_partition(
+    ctx: click.Context,
+    partition: str,
+    size: str,
+    filesystem: str | None,
+    label: str | None,
+    align_mb: int,
+    dry_run: bool,
+) -> None:
+    """Split a partition into two."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required for this operation[/red]")
+        sys.exit(1)
+
+    size_bytes = parse_size(size)
+    if size_bytes is None:
+        console.print(f"[red]Invalid size format: {size}[/red]")
+        sys.exit(1)
+
+    fs_map = {
+        "ext4": FileSystem.EXT4,
+        "ext3": FileSystem.EXT3,
+        "xfs": FileSystem.XFS,
+        "btrfs": FileSystem.BTRFS,
+        "ntfs": FileSystem.NTFS,
+        "fat32": FileSystem.FAT32,
+        "exfat": FileSystem.EXFAT,
+    }
+    fs = fs_map.get(filesystem) if filesystem else None
+
+    from diskforge.core.models import SplitPartitionOptions
+
+    options = SplitPartitionOptions(
+        partition_path=partition,
+        split_size_bytes=size_bytes,
+        filesystem=fs,
+        label=label,
+        align_to_mb=align_mb,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+New size: {humanize.naturalsize(size_bytes, binary=True)}
+Filesystem: {filesystem or "(unchanged)"}
+Label: {label or "(none)"}
+Align: {align_mb} MB""", title="Split Partition Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will split {partition}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Splitting partition..."):
+        success, message = session.platform.split_partition(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("extend-partition")
+@click.argument("partition")
+@click.option("--size", "-s", required=True, help="New partition size (e.g., 10G, 500M)")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def extend_partition(
+    ctx: click.Context,
+    partition: str,
+    size: str,
+    dry_run: bool,
+) -> None:
+    """Extend a partition."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    size_bytes = parse_size(size)
+    if size_bytes is None:
+        console.print(f"[red]Invalid size format: {size}[/red]")
+        sys.exit(1)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+New size: {humanize.naturalsize(size_bytes, binary=True)}""", title="Extend Partition Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will extend {partition}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Extending partition..."):
+        success, message = session.platform.extend_partition(partition, size_bytes)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("shrink-partition")
+@click.argument("partition")
+@click.option("--size", "-s", required=True, help="New partition size (e.g., 10G, 500M)")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def shrink_partition(
+    ctx: click.Context,
+    partition: str,
+    size: str,
+    dry_run: bool,
+) -> None:
+    """Shrink a partition."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    size_bytes = parse_size(size)
+    if size_bytes is None:
+        console.print(f"[red]Invalid size format: {size}[/red]")
+        sys.exit(1)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+New size: {humanize.naturalsize(size_bytes, binary=True)}""", title="Shrink Partition Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will shrink {partition}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Shrinking partition..."):
+        success, message = session.platform.shrink_partition(partition, size_bytes)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("align-4k")
+@click.argument("partition")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def align_4k(ctx: click.Context, partition: str, dry_run: bool) -> None:
+    """Align a partition to 4K boundaries."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import AlignOptions
+
+    options = AlignOptions(partition_path=partition)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+Alignment: 4K""", title="Align 4K Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will realign {partition}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Aligning partition..."):
+        success, message = session.platform.align_partition_4k(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("wipe-device")
+@click.argument("target")
+@click.option(
+    "--method",
+    type=click.Choice(["zero", "random", "dod"]),
+    default="zero",
+    show_default=True,
+    help="Wipe method",
+)
+@click.option("--passes", type=int, default=1, show_default=True, help="Number of passes")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def wipe_device(
+    ctx: click.Context,
+    target: str,
+    method: str,
+    passes: int,
+    dry_run: bool,
+) -> None:
+    """Wipe a disk or partition."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import WipeOptions
+
+    options = WipeOptions(
+        target_path=target,
+        method=method,
+        passes=max(1, passes),
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Target: {target}
+Method: {method}
+Passes: {options.passes}""", title="Wipe Device Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(target)
+    console.print(f"[red]⚠️  This will ERASE ALL DATA on {target}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Wiping device..."):
+        success, message = session.platform.wipe_device(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("partition-recovery")
+@click.argument("disk")
+@click.option(
+    "--output",
+    "-o",
+    type=click.Path(path_type=Path),
+    help="Output directory for recovery artifacts",
+)
+@click.option("--quick/--full", default=True, help="Quick or full scan")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def partition_recovery(
+    ctx: click.Context,
+    disk: str,
+    output: Path | None,
+    quick: bool,
+    dry_run: bool,
+) -> None:
+    """Attempt to recover partitions on a disk."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+
+    from diskforge.core.models import PartitionRecoveryOptions
+
+    options = PartitionRecoveryOptions(
+        disk_path=disk,
+        output_path=output,
+        quick_scan=quick,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Disk: {disk}
+Output: {output or "(none)"}
+Scan: {"Quick" if quick else "Full"}""", title="Partition Recovery Plan"))
+        return
+
+    with console.status("Running partition recovery..."):
+        success, message, artifacts = session.platform.recover_partitions(options)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps({"success": success, "message": message, "artifacts": artifacts}, indent=2, default=str))
+        if not success:
+            sys.exit(1)
+        return
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+        if artifacts:
+            console.print("\nRecovery artifacts:")
+            for key, path in artifacts.items():
+                console.print(f"  {key}: {path}")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("convert-mbr-gpt")
+@click.argument("disk")
+@click.option(
+    "--to",
+    "target_style",
+    type=click.Choice(["gpt", "mbr"], case_sensitive=False),
+    required=True,
+    help="Target partition style",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def convert_mbr_gpt(
+    ctx: click.Context,
+    disk: str,
+    target_style: str,
+    dry_run: bool,
+) -> None:
+    """Convert disk partition style (MBR/GPT)."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import ConvertDiskOptions, PartitionStyle
+
+    style_map = {"gpt": PartitionStyle.GPT, "mbr": PartitionStyle.MBR}
+
+    options = ConvertDiskOptions(
+        disk_path=disk,
+        target_style=style_map[target_style.lower()],
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Disk: {disk}
+Target style: {options.target_style.name}""", title="Convert Partition Style Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(disk)
+    console.print(f"[red]⚠️  This will convert {disk} to {options.target_style.name}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Converting partition style..."):
+        success, message = session.platform.convert_disk_partition_style(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("migrate-system")
+@click.argument("source")
+@click.argument("target")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def migrate_system(
+    ctx: click.Context,
+    source: str,
+    target: str,
+    dry_run: bool,
+) -> None:
+    """Migrate OS/system to another disk."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import MigrationOptions
+
+    options = MigrationOptions(
+        source_disk_path=source,
+        target_disk_path=target,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Source: {source}
+Target: {target}""", title="System Migration Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(target)
+    console.print(f"[red]⚠️  This will DESTROY ALL DATA on {target}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Migrating system disk..."):
+        success, message = session.platform.migrate_system(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
 @cli.command("format")
 @click.argument("partition")
 @click.option(
