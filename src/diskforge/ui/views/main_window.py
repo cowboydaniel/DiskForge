@@ -27,10 +27,10 @@ from PySide6.QtWidgets import (
     QFrame,
     QSizePolicy,
     QToolButton,
-    QListWidget,
-    QListWidgetItem,
+    QTabWidget,
+    QToolBar,
 )
-from PySide6.QtCore import Qt, QTimer, Slot, QModelIndex, QSize
+from PySide6.QtCore import Qt, QTimer, Slot, QSize
 from PySide6.QtGui import QAction, QIcon
 import humanize
 
@@ -42,12 +42,11 @@ from diskforge.core.session import Session
 from diskforge.ui.models.disk_model import DiskModel
 from diskforge.ui.models.job_model import JobModel, PendingOperationsModel
 from diskforge.ui.assets import DiskForgeIcons
-from diskforge.ui.theme import aomei_qss
 from diskforge.ui.widgets.confirmation_dialog import ConfirmationDialog
-from diskforge.ui.widgets.disk_view import DiskMapWidget, MultiDiskMapWidget
+from diskforge.ui.widgets.disk_view import MultiDiskMapWidget
 from diskforge.ui.widgets.progress_widget import ProgressWidget, PendingOperationsWidget
 from diskforge.ui.widgets.selection_actions_panel import SelectionActionsPanel
-from diskforge.ui.widgets.ribbon import RibbonWidget, RibbonButton, RibbonGroup
+from diskforge.ui.widgets.usage_chart import UsageDonutWidget
 from diskforge.ui.views.wizards import (
     CreatePartitionWizard,
     FormatPartitionWizard,
@@ -124,9 +123,8 @@ class MainWindow(QMainWindow):
         self._selected_partition: Partition | None = None
 
         # Set up UI
-        self._apply_aomei_theme()
         self._actions = self._build_actions()
-        self._setup_ribbon()
+        self._setup_toolbar()
         self._setup_central_widget()
         self._setup_statusbar()
         self._update_danger_mode_indicator()
@@ -360,260 +358,215 @@ class MainWindow(QMainWindow):
 
         return actions
 
-    def _setup_ribbon(self) -> None:
-        """Set up the ribbon-style command area."""
-        ribbon = RibbonWidget(self)
-        ribbon.add_tab(
-            "Home",
-            [
-                RibbonGroup(
-                    "Quick Access",
-                    columns=[
-                        [
-                            RibbonButton(self._actions["apply"], size="small"),
-                            RibbonButton(self._actions["undo"], size="small"),
-                            RibbonButton(self._actions["redo"], size="small"),
-                        ]
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Common",
-                    columns=[
-                        [RibbonButton(self._actions["refresh"])],
-                        [
-                            RibbonButton(self._actions["about"], size="small"),
-                            RibbonButton(self._actions["exit"], size="small"),
-                        ],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Partition Operations",
-                    columns=[
-                        [RibbonButton(self._actions["create_partition"])],
-                        [
-                            RibbonButton(self._actions["format_partition"], size="small"),
-                            RibbonButton(self._actions["delete_partition"], size="small"),
-                        ],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Safety",
-                    columns=[[RibbonButton(self._actions["danger_mode"], size="small")]],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "BitLocker",
-                    columns=[
-                        [RibbonButton(self._actions["bitlocker_status"])],
-                        [
-                            RibbonButton(self._actions["bitlocker_enable"], size="small"),
-                            RibbonButton(self._actions["bitlocker_disable"], size="small"),
-                        ],
-                    ],
-                ),
-            ],
-        )
-        ribbon.add_tab(
-            "Advanced",
-            [
-                RibbonGroup(
-                    "Resize",
-                    columns=[
-                        [RibbonButton(self._actions["resize_move_partition"])],
-                        [
-                            RibbonButton(self._actions["extend_partition"], size="small"),
-                            RibbonButton(self._actions["shrink_partition"], size="small"),
-                        ],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Dynamic Volumes",
-                    columns=[
-                        [RibbonButton(self._actions["resize_move_dynamic_volume"])],
-                        [
-                            RibbonButton(self._actions["extend_dynamic_volume"], size="small"),
-                            RibbonButton(self._actions["shrink_dynamic_volume"], size="small"),
-                        ],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Space Tools",
-                    columns=[
-                        [RibbonButton(self._actions["allocate_free_space"])],
-                        [RibbonButton(self._actions["one_click_adjust_space"], size="small")],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Partition Tools",
-                    columns=[
-                        [RibbonButton(self._actions["merge_partitions"])],
-                        [
-                            RibbonButton(self._actions["split_partition"], size="small"),
-                            RibbonButton(self._actions["align_4k"], size="small"),
-                            RibbonButton(self._actions["defrag_partition"], size="small"),
-                        ],
-                        [
-                            RibbonButton(self._actions["edit_partition_attributes"], size="small"),
-                            RibbonButton(self._actions["convert_filesystem"], size="small"),
-                            RibbonButton(self._actions["convert_partition_role"], size="small"),
-                        ],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Disk Tools",
-                    columns=[
-                        [
-                            RibbonButton(self._actions["convert_partition_style"]),
-                            RibbonButton(self._actions["convert_system_partition_style"], size="small"),
-                        ],
-                        [
-                            RibbonButton(self._actions["defrag_disk"], size="small"),
-                            RibbonButton(self._actions["wipe_device"], size="small"),
-                            RibbonButton(self._actions["secure_erase_ssd"], size="small"),
-                            RibbonButton(self._actions["partition_recovery"], size="small"),
-                        ],
-                        [
-                            RibbonButton(self._actions["wipe_system_disk"], size="small"),
-                        ],
-                        [
-                            RibbonButton(self._actions["initialize_disk"], size="small"),
-                            RibbonButton(self._actions["convert_disk_layout"], size="small"),
-                        ],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Diagnostics",
-                    columns=[
-                        [RibbonButton(self._actions["disk_health_check"])],
-                        [
-                            RibbonButton(self._actions["disk_speed_test"], size="small"),
-                            RibbonButton(self._actions["bad_sector_scan"], size="small"),
-                            RibbonButton(self._actions["surface_test"], size="small"),
-                        ],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Setup",
-                    columns=[[RibbonButton(self._actions["quick_partition"])]],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Migration",
-                    columns=[[RibbonButton(self._actions["migrate_system"])]],
-                ),
-            ],
-        )
-        ribbon.add_tab(
-            "Cleanup",
-            [
-                RibbonGroup(
-                    "Space Recovery",
-                    columns=[
-                        [RibbonButton(self._actions["free_space"])],
-                        [RibbonButton(self._actions["junk_cleanup"], size="small")],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "File Tools",
-                    columns=[
-                        [RibbonButton(self._actions["large_files"])],
-                        [
-                            RibbonButton(self._actions["duplicate_files"], size="small"),
-                            RibbonButton(self._actions["file_recovery"], size="small"),
-                        ],
-                        [RibbonButton(self._actions["shred_files"], size="small")],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Apps",
-                    columns=[[RibbonButton(self._actions["move_applications"])]],
-                ),
-            ],
-        )
-        ribbon.add_tab(
-            "Backup",
-            [
-                RibbonGroup(
-                    "Backup",
-                    columns=[
-                        [RibbonButton(self._actions["backup"])],
-                        [RibbonButton(self._actions["system_backup"], size="small")],
-                    ],
-                ),
-            ],
-        )
-        ribbon.add_tab(
-            "Restore",
-            [
-                RibbonGroup(
-                    "Restore",
-                    columns=[[RibbonButton(self._actions["restore_backup"])]],
-                ),
-            ],
-        )
-        ribbon.add_tab(
-            "Clone",
-            [
-                RibbonGroup(
-                    "Clone",
-                    columns=[
-                        [
-                            RibbonButton(
-                                self._actions["clone"],
-                                split_actions=[self._actions["clone_disk"], self._actions["clone_partition"]],
-                            )
-                        ],
-                        [RibbonButton(self._actions["clone_partition"], size="small")],
-                    ],
-                ),
-            ],
-        )
-        ribbon.add_tab(
-            "Tools",
-            [
-                RibbonGroup(
-                    "Utilities",
-                    columns=[
-                        [RibbonButton(self._actions["rescue_media"])],
-                        [RibbonButton(self._actions["danger_mode"], size="small")],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Boot & Recovery",
-                    columns=[
-                        [RibbonButton(self._actions["integrate_recovery_env"])],
-                        [
-                            RibbonButton(self._actions["boot_repair"], size="small"),
-                            RibbonButton(self._actions["rebuild_mbr"], size="small"),
-                        ],
-                        [
-                            RibbonButton(self._actions["uefi_boot_manager"], size="small"),
-                            RibbonButton(self._actions["windows_to_go"], size="small"),
-                        ],
-                        [RibbonButton(self._actions["reset_windows_password"], size="small")],
-                    ],
-                    separator_after=True,
-                ),
-                RibbonGroup(
-                    "Session",
-                    columns=[[RibbonButton(self._actions["exit"], size="small")]],
-                ),
-            ],
+    def _setup_toolbar(self) -> None:
+        """Set up the ribbon-style toolbar."""
+        toolbar = QToolBar("DiskForge Ribbon")
+        toolbar.setObjectName("ribbonToolbar")
+        toolbar.setMovable(False)
+        toolbar.setFloatable(False)
+        toolbar.setIconSize(QSize(28, 28))
+        self.addToolBar(Qt.TopToolBarArea, toolbar)
+
+        container = QWidget()
+        container.setObjectName("ribbonContainer")
+        container_layout = QHBoxLayout(container)
+        container_layout.setContentsMargins(8, 6, 8, 6)
+        container_layout.setSpacing(12)
+
+        def build_tool_button(action: QAction, text: str | None = None, compact: bool = False) -> QToolButton:
+            button = QToolButton()
+            button.setDefaultAction(action)
+            if text:
+                button.setText(text)
+            button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            button.setObjectName("toolbarButton")
+            if compact:
+                button.setProperty("compact", True)
+            return button
+
+        def build_menu_button(text: str, icon: QIcon, menu: QMenu) -> QToolButton:
+            button = QToolButton()
+            button.setText(text)
+            button.setIcon(icon)
+            button.setMenu(menu)
+            button.setPopupMode(QToolButton.InstantPopup)
+            button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            button.setObjectName("toolbarButton")
+            return button
+
+        def themed_icon(theme_name: str, fallback: QIcon) -> QIcon:
+            icon = QIcon.fromTheme(theme_name)
+            return icon if not icon.isNull() else fallback
+
+        left_cluster = QWidget()
+        left_cluster.setObjectName("toolbarCluster")
+        left_layout = QHBoxLayout(left_cluster)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(6)
+        left_layout.addWidget(build_tool_button(self._actions["apply"], compact=True))
+        left_layout.addWidget(build_tool_button(self._actions["undo"], compact=True))
+        left_layout.addWidget(build_tool_button(self._actions["redo"], compact=True))
+
+        main_cluster = QWidget()
+        main_cluster.setObjectName("toolbarCluster")
+        main_layout = QHBoxLayout(main_cluster)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(6)
+
+        clone_menu = QMenu(self)
+        clone_menu.addAction(self._actions["clone_disk"])
+        clone_menu.addAction(self._actions["clone_partition"])
+        main_layout.addWidget(
+            build_menu_button(
+                "Clone",
+                themed_icon("edit-copy", self._actions["clone"].icon()),
+                clone_menu,
+            )
         )
 
-        self._ribbon = ribbon
+        convert_menu = QMenu(self)
+        convert_menu.addAction(self._actions["convert_partition_style"])
+        convert_menu.addAction(self._actions["convert_system_partition_style"])
+        convert_menu.addAction(self._actions["convert_filesystem"])
+        convert_menu.addAction(self._actions["convert_partition_role"])
+        convert_menu.addAction(self._actions["convert_disk_layout"])
+        main_layout.addWidget(
+            build_menu_button(
+                "Convert",
+                themed_icon("view-refresh", self._actions["convert_disk_layout"].icon()),
+                convert_menu,
+            )
+        )
+
+        cleanup_menu = QMenu(self)
+        cleanup_menu.addAction(self._actions["free_space"])
+        cleanup_menu.addAction(self._actions["junk_cleanup"])
+        cleanup_menu.addAction(self._actions["large_files"])
+        cleanup_menu.addAction(self._actions["duplicate_files"])
+        cleanup_menu.addAction(self._actions["move_applications"])
+        main_layout.addWidget(
+            build_menu_button(
+                "Free Up",
+                themed_icon("edit-clear", self._actions["free_space"].icon()),
+                cleanup_menu,
+            )
+        )
+
+        recover_menu = QMenu(self)
+        recover_menu.addAction(self._actions["restore_backup"])
+        recover_menu.addAction(self._actions["partition_recovery"])
+        recover_menu.addAction(self._actions["file_recovery"])
+        recover_menu.addAction(self._actions["system_backup"])
+        main_layout.addWidget(
+            build_menu_button(
+                "Recover/Restore",
+                themed_icon("document-revert", self._actions["restore_backup"].icon()),
+                recover_menu,
+            )
+        )
+
+        wipe_menu = QMenu(self)
+        wipe_menu.addAction(self._actions["wipe_device"])
+        wipe_menu.addAction(self._actions["wipe_system_disk"])
+        wipe_menu.addAction(self._actions["secure_erase_ssd"])
+        wipe_menu.addAction(self._actions["shred_files"])
+        main_layout.addWidget(
+            build_menu_button(
+                "Wipe",
+                themed_icon("edit-delete", self._actions["wipe_device"].icon()),
+                wipe_menu,
+            )
+        )
+
+        test_menu = QMenu(self)
+        test_menu.addAction(self._actions["disk_health_check"])
+        test_menu.addAction(self._actions["disk_speed_test"])
+        test_menu.addAction(self._actions["bad_sector_scan"])
+        test_menu.addAction(self._actions["surface_test"])
+        main_layout.addWidget(
+            build_menu_button(
+                "Test",
+                themed_icon("system-search", self._actions["disk_health_check"].icon()),
+                test_menu,
+            )
+        )
+
+        tools_menu = QMenu(self)
+        tools_menu.addAction(self._actions["rescue_media"])
+        tools_menu.addAction(self._actions["integrate_recovery_env"])
+        tools_menu.addAction(self._actions["boot_repair"])
+        tools_menu.addAction(self._actions["rebuild_mbr"])
+        tools_menu.addAction(self._actions["uefi_boot_manager"])
+        tools_menu.addAction(self._actions["windows_to_go"])
+        tools_menu.addAction(self._actions["reset_windows_password"])
+        tools_menu.addSeparator()
+        tools_menu.addAction(self._actions["refresh"])
+        tools_menu.addAction(self._actions["about"])
+        tools_menu.addAction(self._actions["exit"])
+        main_layout.addWidget(
+            build_menu_button(
+                "Tools",
+                themed_icon("applications-system", self._actions["rescue_media"].icon()),
+                tools_menu,
+            )
+        )
+
+        right_cluster = QWidget()
+        right_cluster.setObjectName("toolbarCluster")
+        right_layout = QHBoxLayout(right_cluster)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(8)
+
+        logo_label = QLabel("DF")
+        logo_label.setObjectName("appLogo")
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_label.setFixedSize(26, 26)
+
+        title_label = QLabel("DiskForge")
+        title_label.setObjectName("appTitle")
+
+        branding_layout = QHBoxLayout()
+        branding_layout.setContentsMargins(0, 0, 0, 0)
+        branding_layout.setSpacing(6)
+        branding_layout.addWidget(logo_label)
+        branding_layout.addWidget(title_label)
+        branding_widget = QWidget()
+        branding_widget.setLayout(branding_layout)
+
+        version_badge = QLabel(f"v{__version__}")
+        version_badge.setObjectName("versionBadge")
+        version_badge.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self._danger_label = QLabel("SAFE MODE")
+        self._danger_label.setObjectName("modeBadge")
+        self._danger_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        danger_button = QToolButton()
+        danger_button.setDefaultAction(self._actions["danger_mode"])
+        danger_button.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        danger_button.setObjectName("toolbarButton")
+        danger_button.setProperty("compact", True)
+
+        right_layout.addWidget(branding_widget)
+        right_layout.addWidget(version_badge)
+        right_layout.addWidget(self._danger_label)
+        right_layout.addWidget(danger_button)
+
+        container_layout.addWidget(left_cluster)
+        container_layout.addWidget(self._vertical_separator())
+        container_layout.addWidget(main_cluster)
+        container_layout.addStretch()
+        container_layout.addWidget(right_cluster)
+
+        toolbar.addWidget(container)
+
+    def _vertical_separator(self) -> QFrame:
+        separator = QFrame()
+        separator.setFrameShape(QFrame.VLine)
+        separator.setFrameShadow(QFrame.Plain)
+        separator.setObjectName("toolbarSeparator")
+        separator.setFixedHeight(40)
+        return separator
 
     def _setup_central_widget(self) -> None:
         """Set up the central widget."""
@@ -624,60 +577,6 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        header_bar = QFrame()
-        header_bar.setObjectName("headerBar")
-        header_layout = QHBoxLayout(header_bar)
-        header_layout.setContentsMargins(12, 6, 12, 6)
-        header_layout.setSpacing(12)
-
-        logo_label = QLabel("DF")
-        logo_label.setObjectName("appLogo")
-        logo_label.setAlignment(Qt.AlignCenter)
-        logo_label.setFixedSize(26, 26)
-
-        title_label = QLabel("DiskForge")
-        title_label.setObjectName("appTitle")
-
-        left_header_layout = QHBoxLayout()
-        left_header_layout.setContentsMargins(0, 0, 0, 0)
-        left_header_layout.setSpacing(8)
-        left_header_layout.addWidget(logo_label)
-        left_header_layout.addWidget(title_label)
-
-        header_layout.addLayout(left_header_layout)
-        header_layout.addStretch()
-
-        right_header_layout = QHBoxLayout()
-        right_header_layout.setSpacing(6)
-
-        def add_header_action(action: QAction, label: str) -> None:
-            button = QToolButton()
-            button.setObjectName("headerActionButton")
-            button.setIcon(action.icon())
-            button.setIconSize(QSize(16, 16))
-            button.setAutoRaise(True)
-            button.setToolTip(label)
-            button.clicked.connect(action.trigger)
-            right_header_layout.addWidget(button)
-
-        add_header_action(self._actions["refresh"], "Refresh")
-        add_header_action(self._actions["about"], "About")
-
-        version_badge = QLabel(f"v{__version__}")
-        version_badge.setObjectName("versionBadge")
-        version_badge.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        right_header_layout.addWidget(version_badge)
-
-        self._danger_label = QLabel("SAFE MODE")
-        self._danger_label.setObjectName("modeBadge")
-        self._danger_label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        right_header_layout.addWidget(self._danger_label)
-
-        header_layout.addLayout(right_header_layout)
-
-        main_layout.addWidget(header_bar)
-        main_layout.addWidget(self._ribbon)
-
         # Main splitter
         splitter = QSplitter(Qt.Horizontal)
         splitter.setObjectName("mainSplitter")
@@ -685,19 +584,12 @@ class MainWindow(QMainWindow):
         # Center area - disk list on top and disk map beneath
         center_panel = QWidget()
         center_layout = QVBoxLayout(center_panel)
-        center_layout.setContentsMargins(0, 0, 0, 0)
-        center_layout.setSpacing(0)
+        center_layout.setContentsMargins(12, 12, 12, 12)
+        center_layout.setSpacing(10)
 
-        center_splitter = QSplitter(Qt.Vertical)
-        center_splitter.setObjectName("centerSplitter")
-
-        disk_list_panel = QWidget()
-        disk_list_layout = QVBoxLayout(disk_list_panel)
-        disk_list_layout.setContentsMargins(12, 12, 12, 12)
-        disk_list_layout.setSpacing(12)
-
-        disk_group = QGroupBox("Disks and Partitions")
-        disk_layout = QVBoxLayout(disk_group)
+        disk_title = QLabel("Disks & Partitions")
+        disk_title.setObjectName("sectionTitle")
+        center_layout.addWidget(disk_title)
 
         self._disk_tree = QTreeView()
         self._disk_tree.setModel(self._disk_model)
@@ -706,63 +598,29 @@ class MainWindow(QMainWindow):
         self._disk_tree.selectionModel().selectionChanged.connect(self._on_disk_selection_changed)
         self._disk_tree.setContextMenuPolicy(Qt.CustomContextMenu)
         self._disk_tree.customContextMenuRequested.connect(self._show_context_menu)
+        self._disk_tree.setRootIsDecorated(True)
 
-        # Set column widths
         header = self._disk_tree.header()
         for column in range(self._disk_model.columnCount()):
             header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
 
-        disk_layout.addWidget(self._disk_tree)
-        disk_list_layout.addWidget(disk_group)
-
-        disk_overview_title = QLabel("Disk Overview")
-        disk_overview_title.setObjectName("sectionTitle")
-        disk_list_layout.addWidget(disk_overview_title)
-
-        self._multi_disk_map = MultiDiskMapWidget()
-        disk_list_layout.addWidget(self._multi_disk_map)
+        center_layout.addWidget(self._disk_tree, 1)
 
         disk_map_panel = QFrame()
-        disk_map_panel.setObjectName("diskMapPanel")
-        disk_panel_layout = QVBoxLayout(disk_map_panel)
-        disk_panel_layout.setContentsMargins(12, 12, 12, 12)
-        disk_panel_layout.setSpacing(6)
+        disk_map_panel.setObjectName("diskMapStrip")
+        disk_map_layout = QVBoxLayout(disk_map_panel)
+        disk_map_layout.setContentsMargins(10, 10, 10, 10)
+        disk_map_layout.setSpacing(6)
 
-        disk_header_layout = QHBoxLayout()
-        disk_title = QLabel("Disk Map")
-        disk_title.setObjectName("sectionTitle")
-        disk_header_layout.addWidget(disk_title)
-        disk_header_layout.addStretch()
+        disk_map_title = QLabel("Disk Map")
+        disk_map_title.setObjectName("sectionTitle")
+        disk_map_layout.addWidget(disk_map_title)
 
-        def add_map_action(text: str, slot: Any) -> None:
-            button = QPushButton(text)
-            button.setObjectName("mapActionButton")
-            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            button.clicked.connect(slot)
-            disk_header_layout.addWidget(button)
+        self._multi_disk_map = MultiDiskMapWidget()
+        disk_map_layout.addWidget(self._multi_disk_map)
 
-        add_map_action("Refresh", self._refresh_inventory)
-        add_map_action("Create", self._on_create_partition)
-        add_map_action("Format", self._on_format_partition)
-        add_map_action("Delete", self._on_delete_partition)
-
-        disk_panel_layout.addLayout(disk_header_layout)
-
-        self._disk_map_subtitle = QLabel("Select a disk to view the map")
-        self._disk_map_subtitle.setObjectName("diskMapSubtitle")
-        disk_panel_layout.addWidget(self._disk_map_subtitle)
-
-        self._disk_map = DiskMapWidget()
-        self._disk_map.partitionSelected.connect(self._on_partition_selected)
-        disk_panel_layout.addWidget(self._disk_map)
-
-        center_splitter.addWidget(disk_list_panel)
-        center_splitter.addWidget(disk_map_panel)
-        center_splitter.setStretchFactor(0, 1)
-        center_splitter.setStretchFactor(1, 2)
-
-        center_layout.addWidget(center_splitter)
+        center_layout.addWidget(disk_map_panel)
         splitter.addWidget(center_panel)
 
         # Right panel - actions and properties
@@ -772,75 +630,38 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(12, 12, 12, 12)
         right_layout.setSpacing(12)
 
-        selection_actions_section = QWidget()
-        selection_actions_layout = QVBoxLayout(selection_actions_section)
-        selection_actions_layout.setContentsMargins(0, 0, 0, 0)
-        selection_actions_layout.setSpacing(6)
+        context_section = QFrame()
+        context_section.setObjectName("contextPanel")
+        context_layout = QVBoxLayout(context_section)
+        context_layout.setContentsMargins(10, 10, 10, 10)
+        context_layout.setSpacing(8)
 
-        selection_actions_title = QLabel("Selection Actions")
-        selection_actions_title.setObjectName("sectionTitle")
-        selection_actions_layout.addWidget(selection_actions_title)
+        usage_title = QLabel("Usage")
+        usage_title.setObjectName("sectionTitle")
+        context_layout.addWidget(usage_title)
 
-        self._selection_actions_panel = SelectionActionsPanel(self._actions, selection_actions_section)
+        self._usage_chart = UsageDonutWidget()
+        context_layout.addWidget(self._usage_chart, alignment=Qt.AlignCenter)
+
+        self._usage_summary = QLabel("Select a disk or partition to view usage.")
+        self._usage_summary.setObjectName("usageSummary")
+        self._usage_summary.setWordWrap(True)
+        context_layout.addWidget(self._usage_summary)
+
+        self._selection_actions_panel = SelectionActionsPanel(self._actions, context_section)
         self._selection_actions_panel.propertiesRequested.connect(self._show_selection_properties)
-        selection_actions_layout.addWidget(self._selection_actions_panel)
-        right_layout.addWidget(selection_actions_section)
+        context_layout.addWidget(self._selection_actions_panel)
 
-        actions_section = QWidget()
-        actions_layout = QVBoxLayout(actions_section)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(6)
-
-        actions_title = QLabel("Actions")
-        actions_title.setObjectName("sectionTitle")
-        actions_layout.addWidget(actions_title)
-
-        self._actions_list = QListWidget()
-        self._actions_list.setObjectName("actionsList")
-        self._actions_list.setIconSize(QSize(18, 18))
-        self._actions_list.setSpacing(4)
-        self._actions_list.setSelectionMode(QListWidget.NoSelection)
-
-        quick_action_keys = [
-            "create_partition",
-            "format_partition",
-            "delete_partition",
-            "resize_move_partition",
-            "clone_disk",
-            "clone_partition",
-            "create_backup",
-            "system_backup",
-            "restore_backup",
-            "rescue_media",
-            "refresh",
-            "danger_mode",
-        ]
-        for action_key in quick_action_keys:
-            action = self._actions.get(action_key)
-            if action is None:
-                continue
-            item = QListWidgetItem(action.icon(), action.text())
-            item.setData(Qt.UserRole, action_key)
-            self._actions_list.addItem(item)
-
-        self._actions_list.itemClicked.connect(self._on_quick_action_selected)
-        actions_layout.addWidget(self._actions_list)
-        right_layout.addWidget(actions_section)
-
-        # Details panel
-        details_section = QWidget()
-        details_layout = QVBoxLayout(details_section)
-        details_layout.setContentsMargins(0, 0, 0, 0)
-        details_layout.setSpacing(6)
-        details_title = QLabel("Selection Details")
+        details_title = QLabel("Details")
         details_title.setObjectName("sectionTitle")
-        details_layout.addWidget(details_title)
+        context_layout.addWidget(details_title)
+
         self._details_label = QLabel("Select a disk or partition to view details")
         self._details_label.setWordWrap(True)
-        details_layout.addWidget(self._details_label)
-        right_layout.addWidget(details_section)
+        context_layout.addWidget(self._details_label)
 
-        # BitLocker panel
+        right_layout.addWidget(context_section)
+
         self._bitlocker_group = QGroupBox("BitLocker")
         bitlocker_layout = QVBoxLayout(self._bitlocker_group)
 
@@ -871,9 +692,12 @@ class MainWindow(QMainWindow):
 
         right_layout.addWidget(self._bitlocker_group)
 
-        # Pending operations panel
-        pending_group = QGroupBox("Pending Operations")
-        pending_layout = QVBoxLayout(pending_group)
+        sidebar_tabs = QTabWidget()
+        sidebar_tabs.setObjectName("sidebarTabs")
+
+        pending_tab = QWidget()
+        pending_layout = QVBoxLayout(pending_tab)
+        pending_layout.setContentsMargins(6, 6, 6, 6)
         self._pending_widget = PendingOperationsWidget()
         self._pending_widget.setModel(self._pending_model)
         self._pending_widget.applyRequested.connect(self._apply_pending_operations)
@@ -883,33 +707,34 @@ class MainWindow(QMainWindow):
         self._pending_model.pendingCountChanged.connect(self._actions["apply"].setEnabled)
         self._pending_model.pendingCountChanged.connect(self._actions["undo"].setEnabled)
         pending_layout.addWidget(self._pending_widget)
-        right_layout.addWidget(pending_group)
+        sidebar_tabs.addTab(pending_tab, "Pending")
 
-        # Progress panel
-        progress_group = QGroupBox("Operation Progress")
-        progress_layout = QVBoxLayout(progress_group)
+        progress_tab = QWidget()
+        progress_layout = QVBoxLayout(progress_tab)
+        progress_layout.setContentsMargins(6, 6, 6, 6)
         self._progress_widget = ProgressWidget()
         self._progress_widget.cancelRequested.connect(self._on_cancel_job)
         self._progress_widget.pauseRequested.connect(self._on_pause_job)
         self._progress_widget.resumeRequested.connect(self._on_resume_job)
         progress_layout.addWidget(self._progress_widget)
-        right_layout.addWidget(progress_group)
+        sidebar_tabs.addTab(progress_tab, "Progress")
 
-        # Job queue
-        job_group = QGroupBox("Job Queue")
-        job_layout = QVBoxLayout(job_group)
+        queue_tab = QWidget()
+        queue_layout = QVBoxLayout(queue_tab)
+        queue_layout.setContentsMargins(6, 6, 6, 6)
         self._job_table = QTableView()
         self._job_table.setModel(self._job_model)
         self._job_table.setSelectionBehavior(QTableView.SelectRows)
         self._job_table.setAlternatingRowColors(True)
-        self._job_table.setMaximumHeight(150)
-        job_layout.addWidget(self._job_table)
+        self._job_table.setMaximumHeight(170)
+        queue_layout.addWidget(self._job_table)
 
         clear_btn = QPushButton("Clear Completed")
         clear_btn.clicked.connect(self._job_model.clearCompleted)
-        job_layout.addWidget(clear_btn)
+        queue_layout.addWidget(clear_btn)
+        sidebar_tabs.addTab(queue_tab, "Queue")
 
-        right_layout.addWidget(job_group)
+        right_layout.addWidget(sidebar_tabs)
 
         splitter.addWidget(right_panel)
 
@@ -932,14 +757,6 @@ class MainWindow(QMainWindow):
             count = len(pending_jobs)
             noun = "operation" if count == 1 else "operations"
             self._status_label.setText(f"Applied {count} {noun}.")
-
-    def _on_quick_action_selected(self, item: QListWidgetItem) -> None:
-        action_key = item.data(Qt.UserRole)
-        if not action_key:
-            return
-        action = self._actions.get(action_key)
-        if action is not None:
-            action.trigger()
 
     def _submit_job(self, job: Job[Any]) -> None:
         """Submit a job to the runner and track it in the UI."""
@@ -984,10 +801,6 @@ class MainWindow(QMainWindow):
     def _on_job_progress_changed(self, job_id: str, progress: Any) -> None:
         if job_id == self._active_job_id:
             self._progress_widget.updateProgress(progress)
-
-    def _apply_aomei_theme(self) -> None:
-        """Apply an AOMEI-inspired theme to the main window."""
-        self.setStyleSheet(aomei_qss())
 
     def _setup_statusbar(self) -> None:
         """Set up the status bar."""
@@ -1111,9 +924,10 @@ class MainWindow(QMainWindow):
         indexes = self._disk_tree.selectionModel().selectedIndexes()
         if not indexes:
             self._details_label.setText("Select a disk or partition")
-            self._set_disk_map(None)
             self._selected_disk = None
             self._selected_partition = None
+            self._usage_chart.set_usage(None, None, label="No selection")
+            self._usage_summary.setText("Select a disk or partition to view usage.")
             self._selection_actions_panel.set_selection(None)
             return
 
@@ -1123,15 +937,10 @@ class MainWindow(QMainWindow):
 
         if isinstance(item, Disk):
             self._show_disk_details(item)
-            self._set_disk_map(item)
             self._selection_actions_panel.set_selection("disk", item.device_path)
         elif isinstance(item, Partition):
             self._show_partition_details(item)
             self._selection_actions_panel.set_selection("partition", item.device_path)
-            parent_index = indexes[0].parent()
-            parent_item = self._disk_model.getItemAtIndex(parent_index) if parent_index.isValid() else None
-            if isinstance(parent_item, Disk):
-                self._set_disk_map(parent_item)
 
     def _show_disk_details(self, disk: Disk) -> None:
         """Show disk details in the details panel."""
@@ -1149,6 +958,12 @@ class MainWindow(QMainWindow):
         self._details_label.setText(text)
         self._selected_disk = disk
         self._selected_partition = None
+        used_bytes = self._calculate_disk_used_bytes(disk)
+        self._usage_chart.set_usage(used_bytes, disk.size_bytes, label=disk.device_path)
+        self._usage_summary.setText(
+            f"{humanize.naturalsize(used_bytes, binary=True) if used_bytes is not None else 'Unknown'} "
+            f"used of {humanize.naturalsize(disk.size_bytes, binary=True)}"
+        )
         self._refresh_bitlocker_panel()
 
     def _show_partition_details(self, partition: Partition) -> None:
@@ -1167,26 +982,33 @@ class MainWindow(QMainWindow):
         self._details_label.setText(text)
         self._selected_disk = None
         self._selected_partition = partition
+        used_bytes = self._calculate_partition_used_bytes(partition)
+        self._usage_chart.set_usage(used_bytes, partition.size_bytes, label=partition.device_path)
+        summary_used = (
+            humanize.naturalsize(used_bytes, binary=True) if used_bytes is not None else "Unknown"
+        )
+        self._usage_summary.setText(
+            f"{summary_used} used of {humanize.naturalsize(partition.size_bytes, binary=True)}"
+        )
         self._refresh_bitlocker_panel(partition.mountpoint)
 
-    def _set_disk_map(self, disk: Disk | None) -> None:
-        """Update the disk map widget and its header."""
-        self._disk_map.setDisk(disk)
-        if disk is None:
-            self._disk_map_subtitle.setText("Select a disk to view the map")
-            return
+    def _calculate_disk_used_bytes(self, disk: Disk) -> int | None:
+        used_values = [p.used_space_bytes for p in disk.partitions if p.used_space_bytes is not None]
+        if used_values:
+            return sum(used_values)
+        free_values = [p.free_space_bytes for p in disk.partitions if p.free_space_bytes is not None]
+        if free_values:
+            return max(0, disk.total_partition_size - sum(free_values))
+        if disk.size_bytes:
+            return max(0, disk.size_bytes - disk.unallocated_bytes)
+        return None
 
-        size_text = humanize.naturalsize(disk.size_bytes, binary=True)
-        model_text = disk.model or "Unknown model"
-        self._disk_map_subtitle.setText(
-            f"{disk.device_path} • {model_text} • {size_text} • {disk.partition_style.name}"
-        )
-
-    @Slot(Partition)
-    def _on_partition_selected(self, partition: Partition) -> None:
-        """Handle partition selection from graphics view."""
-        self._show_partition_details(partition)
-        self._selection_actions_panel.set_selection("partition", partition.device_path)
+    def _calculate_partition_used_bytes(self, partition: Partition) -> int | None:
+        if partition.used_space_bytes is not None:
+            return partition.used_space_bytes
+        if partition.free_space_bytes is not None:
+            return max(0, partition.size_bytes - partition.free_space_bytes)
+        return None
 
     def _show_selection_properties(self) -> None:
         """Show the properties for the current selection."""

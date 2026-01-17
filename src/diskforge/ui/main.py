@@ -41,6 +41,7 @@ class DiskForgeApp:
 
         # Set application style
         self.app.setStyle("Fusion")
+        self._load_stylesheet()
 
         try:
             # Load configuration
@@ -70,6 +71,11 @@ class DiskForgeApp:
                     self.session.close()
                 except Exception:
                     pass
+
+    def _load_stylesheet(self) -> None:
+        style_path = Path(__file__).resolve().parent / "styles" / "diskforge.qss"
+        if style_path.exists():
+            self.app.setStyleSheet(style_path.read_text(encoding="utf-8"))
 
 
 def main() -> None:
