@@ -785,6 +785,32 @@ class DiskSpeedTestResult:
 
 
 @dataclass
+class BitLockerStatus:
+    mount_point: str
+    volume_status: str
+    protection_status: str
+    encryption_percentage: float | None
+    lock_status: str | None
+    auto_unlock_enabled: bool | None
+    key_protectors: list[str] = field(default_factory=list)
+    success: bool = True
+    message: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mount_point": self.mount_point,
+            "volume_status": self.volume_status,
+            "protection_status": self.protection_status,
+            "encryption_percentage": self.encryption_percentage,
+            "lock_status": self.lock_status,
+            "auto_unlock_enabled": self.auto_unlock_enabled,
+            "key_protectors": self.key_protectors,
+            "success": self.success,
+            "message": self.message,
+        }
+
+
+@dataclass
 class JunkFile:
     path: str
     size_bytes: int

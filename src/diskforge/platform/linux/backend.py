@@ -36,6 +36,7 @@ from diskforge.core.models import (
     BadSectorScanResult,
     SurfaceTestResult,
     DiskSpeedTestResult,
+    BitLockerStatus,
 )
 from diskforge.platform.base import CommandResult, PlatformBackend
 from diskforge.platform.file_ops import (
@@ -2108,6 +2109,15 @@ class LinuxBackend(PlatformBackend):
         dry_run: bool = False,
     ) -> tuple[bool, str]:
         return False, "Windows password reset is only supported on Windows."
+
+    def get_bitlocker_status(self, mount_point: str) -> BitLockerStatus:
+        raise NotImplementedError("BitLocker is only supported on Windows.")
+
+    def enable_bitlocker(self, mount_point: str) -> tuple[bool, str]:
+        return False, "BitLocker is only supported on Windows."
+
+    def disable_bitlocker(self, mount_point: str) -> tuple[bool, str]:
+        return False, "BitLocker is only supported on Windows."
 
     def _generate_grub_config(self) -> str:
         """Generate GRUB configuration for rescue ISO."""

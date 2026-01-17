@@ -2875,6 +2875,114 @@ User: {username}""", title="Password Reset Plan"))
         sys.exit(1)
 
 
+@cli.command("bitlocker-status")
+@click.argument("volume")
+@click.pass_context
+def bitlocker_status(ctx: click.Context, volume: str) -> None:
+    """Show BitLocker status for a volume."""
+    session = get_session(ctx)
+    require_platform(session, "windows", "BitLocker")
+    json_output = ctx.obj.get("json_output", False)
+
+    status = session.platform.get_bitlocker_status(volume)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(status.to_dict(), indent=2, default=str))
+        return
+
+    if not status.success:
+        console.print(f"[red]✗ {status.message}[/red]")
+        sys.exit(1)
+
+    auto_unlock_text = (
+        "Enabled"
+        if status.auto_unlock_enabled is True
+        else "Disabled"
+        if status.auto_unlock_enabled is False
+        else "Unknown"
+    )
+    encryption_text = (
+        f"{status.encryption_percentage}%"
+        if status.encryption_percentage is not None
+        else "Unknown"
+    )
+    key_protectors_text = ", ".join(status.key_protectors) if status.key_protectors else "None"
+
+    panel = Panel(
+        f"""[cyan]Volume:[/cyan] {status.mount_point}
+[cyan]Volume Status:[/cyan] {status.volume_status}
+[cyan]Protection Status:[/cyan] {status.protection_status}
+[cyan]Encryption:[/cyan] {encryption_text}
+[cyan]Lock Status:[/cyan] {status.lock_status or "Unknown"}
+[cyan]Auto Unlock:[/cyan] {auto_unlock_text}
+[cyan]Key Protectors:[/cyan] {key_protectors_text}""",
+        title="BitLocker Status",
+    )
+    console.print(panel)
+
+
+@cli.command("bitlocker-enable")
+@click.argument("volume")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
+@click.pass_context
+def bitlocker_enable(ctx: click.Context, volume: str, yes: bool) -> None:
+    """Enable BitLocker on a volume."""
+    session = get_session(ctx)
+    require_platform(session, "windows", "BitLocker")
+    json_output = ctx.obj.get("json_output", False)
+
+    if not yes and not click.confirm(f"Enable BitLocker on {volume}?"):
+        console.print("[yellow]Cancelled[/yellow]")
+        sys.exit(1)
+
+    with console.status("Enabling BitLocker..."):
+        success, message = session.platform.enable_bitlocker(volume)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps({"volume": volume, "success": success, "message": message}, indent=2))
+        return
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("bitlocker-disable")
+@click.argument("volume")
+@click.option("--yes", is_flag=True, help="Skip confirmation prompt")
+@click.pass_context
+def bitlocker_disable(ctx: click.Context, volume: str, yes: bool) -> None:
+    """Disable BitLocker on a volume."""
+    session = get_session(ctx)
+    require_platform(session, "windows", "BitLocker")
+    json_output = ctx.obj.get("json_output", False)
+
+    if not yes and not click.confirm(f"Disable BitLocker on {volume}?"):
+        console.print("[yellow]Cancelled[/yellow]")
+        sys.exit(1)
+
+    with console.status("Disabling BitLocker..."):
+        success, message = session.platform.disable_bitlocker(volume)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps({"volume": volume, "success": success, "message": message}, indent=2))
+        return
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
 @cli.command("status")
 @click.pass_context
 def status(ctx: click.Context) -> None:
