@@ -565,3 +565,221 @@ class InitializeDiskOptions:
 
     disk_path: str
     partition_style: PartitionStyle = PartitionStyle.GPT
+
+
+@dataclass
+class JunkFile:
+    path: str
+    size_bytes: int
+    category: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "path": self.path,
+            "size_bytes": self.size_bytes,
+            "category": self.category,
+        }
+
+
+@dataclass
+class JunkScanResult:
+    roots: list[str]
+    total_size_bytes: int
+    file_count: int
+    files: list[JunkFile]
+    skipped_paths: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "roots": self.roots,
+            "total_size_bytes": self.total_size_bytes,
+            "file_count": self.file_count,
+            "files": [item.to_dict() for item in self.files],
+            "skipped_paths": self.skipped_paths,
+        }
+
+
+@dataclass
+class JunkCleanupResult:
+    roots: list[str]
+    removed_files: list[str]
+    failed_files: list[str]
+    freed_bytes: int
+    total_files_removed: int
+    total_files_failed: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "roots": self.roots,
+            "removed_files": self.removed_files,
+            "failed_files": self.failed_files,
+            "freed_bytes": self.freed_bytes,
+            "total_files_removed": self.total_files_removed,
+            "total_files_failed": self.total_files_failed,
+        }
+
+
+@dataclass
+class LargeFileEntry:
+    path: str
+    size_bytes: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"path": self.path, "size_bytes": self.size_bytes}
+
+
+@dataclass
+class LargeFileScanResult:
+    roots: list[str]
+    min_size_bytes: int
+    total_size_bytes: int
+    file_count: int
+    files: list[LargeFileEntry]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "roots": self.roots,
+            "min_size_bytes": self.min_size_bytes,
+            "total_size_bytes": self.total_size_bytes,
+            "file_count": self.file_count,
+            "files": [entry.to_dict() for entry in self.files],
+        }
+
+
+@dataclass
+class DuplicateFileGroup:
+    size_bytes: int
+    file_hash: str
+    paths: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "size_bytes": self.size_bytes,
+            "file_hash": self.file_hash,
+            "paths": self.paths,
+        }
+
+
+@dataclass
+class DuplicateScanResult:
+    roots: list[str]
+    min_size_bytes: int
+    total_wasted_bytes: int
+    duplicate_groups: list[DuplicateFileGroup]
+    skipped_paths: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "roots": self.roots,
+            "min_size_bytes": self.min_size_bytes,
+            "total_wasted_bytes": self.total_wasted_bytes,
+            "duplicate_groups": [group.to_dict() for group in self.duplicate_groups],
+            "skipped_paths": self.skipped_paths,
+        }
+
+
+@dataclass
+class FileRemovalResult:
+    removed: list[str]
+    failed: list[str]
+    freed_bytes: int
+    message: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "removed": self.removed,
+            "failed": self.failed,
+            "freed_bytes": self.freed_bytes,
+            "message": self.message,
+        }
+
+
+@dataclass
+class FreeSpaceReport:
+    roots: list[str]
+    total_reclaimable_bytes: int
+    junk_bytes: int
+    large_files_bytes: int
+    duplicate_bytes: int
+    junk_files: list[JunkFile] = field(default_factory=list)
+    large_files: list[LargeFileEntry] = field(default_factory=list)
+    duplicate_groups: list[DuplicateFileGroup] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "roots": self.roots,
+            "total_reclaimable_bytes": self.total_reclaimable_bytes,
+            "junk_bytes": self.junk_bytes,
+            "large_files_bytes": self.large_files_bytes,
+            "duplicate_bytes": self.duplicate_bytes,
+            "junk_files": [item.to_dict() for item in self.junk_files],
+            "large_files": [item.to_dict() for item in self.large_files],
+            "duplicate_groups": [item.to_dict() for item in self.duplicate_groups],
+        }
+
+
+@dataclass
+class FreeSpaceOptions:
+    roots: list[str]
+    exclude_patterns: list[str] = field(default_factory=list)
+    junk_max_files: int | None = None
+    large_min_size_bytes: int = 512 * 1024 * 1024
+    large_max_results: int | None = 25
+    duplicate_min_size_bytes: int = 32 * 1024 * 1024
+
+
+@dataclass
+class JunkCleanupOptions:
+    roots: list[str]
+    exclude_patterns: list[str] = field(default_factory=list)
+    max_files: int | None = None
+
+
+@dataclass
+class LargeFileScanOptions:
+    roots: list[str]
+    min_size_bytes: int
+    max_results: int | None = None
+    exclude_patterns: list[str] = field(default_factory=list)
+
+
+@dataclass
+class DuplicateScanOptions:
+    roots: list[str]
+    min_size_bytes: int
+    exclude_patterns: list[str] = field(default_factory=list)
+
+
+@dataclass
+class DuplicateRemovalOptions:
+    duplicate_groups: list[DuplicateFileGroup]
+    keep_strategy: str = "first"
+
+
+@dataclass
+class FileRemovalOptions:
+    paths: list[str]
+
+
+@dataclass
+class MoveApplicationOptions:
+    source_path: str
+    destination_root: str
+
+
+@dataclass
+class MoveApplicationResult:
+    success: bool
+    message: str
+    source_path: str
+    destination_path: str
+    bytes_moved: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "success": self.success,
+            "message": self.message,
+            "source_path": self.source_path,
+            "destination_path": self.destination_path,
+            "bytes_moved": self.bytes_moved,
+        }

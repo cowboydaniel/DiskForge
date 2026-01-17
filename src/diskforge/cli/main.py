@@ -19,7 +19,16 @@ import humanize
 
 from diskforge import __version__
 from diskforge.core.config import DiskForgeConfig, load_config
-from diskforge.core.models import FileSystem
+from diskforge.core.models import (
+    DuplicateRemovalOptions,
+    DuplicateScanOptions,
+    FileRemovalOptions,
+    FileSystem,
+    FreeSpaceOptions,
+    JunkCleanupOptions,
+    LargeFileScanOptions,
+    MoveApplicationOptions,
+)
 from diskforge.core.safety import DangerMode
 from diskforge.core.session import Session
 
@@ -2089,6 +2098,298 @@ def status(ctx: click.Context) -> None:
 [cyan]Admin:[/cyan] {"Yes" if session.platform.is_admin() else "No"}
 [cyan]Started:[/cyan] {session.started_at.isoformat()}""",
         title="DiskForge Status",
+    )
+    console.print(panel)
+
+
+def _require_danger_mode(session: Session, operation_name: str) -> None:
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print(
+            f"[red]{operation_name} requires Danger Mode.[/red] "
+            "Re-run with --danger-mode and confirm.",
+        )
+        sys.exit(1)
+
+
+def _confirm_destructive(session: Session, target: str) -> None:
+    confirm_str = session.safety.generate_confirmation_string(target)
+    confirm = click.prompt(
+        f"Type '{confirm_str}' to continue",
+        default="",
+        show_default=False,
+    )
+    if confirm.strip() != confirm_str:
+        console.print("[red]Confirmation mismatch. Operation cancelled.[/red]")
+        sys.exit(1)
+
+
+@cli.command("free-space")
+@click.option("--root", "roots", multiple=True, type=click.Path(path_type=Path))
+@click.option("--exclude", "excludes", multiple=True, help="Glob pattern to exclude")
+@click.option("--large-min-size", default="512M", help="Large file threshold (e.g., 1G)")
+@click.option("--duplicate-min-size", default="32M", help="Duplicate scan minimum size")
+@click.option("--junk-max-files", type=int, default=500, help="Maximum junk files to include")
+@click.pass_context
+def free_space(
+    ctx: click.Context,
+    roots: tuple[Path, ...],
+    excludes: tuple[str, ...],
+    large_min_size: str,
+    duplicate_min_size: str,
+    junk_max_files: int,
+) -> None:
+    """Summarize reclaimable space."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+    large_min = parse_size(large_min_size) or 0
+    duplicate_min = parse_size(duplicate_min_size) or 0
+    options = FreeSpaceOptions(
+        roots=[str(root) for root in roots],
+        exclude_patterns=list(excludes),
+        junk_max_files=junk_max_files,
+        large_min_size_bytes=large_min,
+        duplicate_min_size_bytes=duplicate_min,
+    )
+    report = session.platform.scan_free_space(options)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(report.to_dict(), indent=2, default=str))
+        return
+
+    panel = Panel(
+        f"""[cyan]Roots:[/cyan] {", ".join(report.roots)}
+[cyan]Total Reclaimable:[/cyan] {humanize.naturalsize(report.total_reclaimable_bytes, binary=True)}
+[cyan]Junk:[/cyan] {humanize.naturalsize(report.junk_bytes, binary=True)}
+[cyan]Large Files:[/cyan] {humanize.naturalsize(report.large_files_bytes, binary=True)}
+[cyan]Duplicates:[/cyan] {humanize.naturalsize(report.duplicate_bytes, binary=True)}""",
+        title="Free Space Summary",
+    )
+    console.print(panel)
+
+
+@cli.command("junk-scan")
+@click.option("--root", "roots", multiple=True, type=click.Path(path_type=Path))
+@click.option("--exclude", "excludes", multiple=True, help="Glob pattern to exclude")
+@click.option("--max-files", type=int, default=500, help="Maximum junk files to include")
+@click.pass_context
+def junk_scan(
+    ctx: click.Context,
+    roots: tuple[Path, ...],
+    excludes: tuple[str, ...],
+    max_files: int,
+) -> None:
+    """Scan for junk files."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+    options = JunkCleanupOptions(
+        roots=[str(root) for root in roots],
+        exclude_patterns=list(excludes),
+        max_files=max_files,
+    )
+    scan = session.platform.scan_junk_files(options)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(scan.to_dict(), indent=2, default=str))
+        return
+
+    table = Table(title="Junk Files")
+    table.add_column("Path", style="cyan")
+    table.add_column("Category", style="magenta")
+    table.add_column("Size", style="green")
+    for item in scan.files:
+        table.add_row(item.path, item.category, humanize.naturalsize(item.size_bytes, binary=True))
+    console.print(table)
+    console.print(f"Total: {humanize.naturalsize(scan.total_size_bytes, binary=True)}")
+
+
+@cli.command("junk-clean")
+@click.option("--root", "roots", multiple=True, type=click.Path(path_type=Path))
+@click.option("--exclude", "excludes", multiple=True, help="Glob pattern to exclude")
+@click.option("--max-files", type=int, default=500, help="Maximum junk files to include")
+@click.pass_context
+def junk_clean(
+    ctx: click.Context,
+    roots: tuple[Path, ...],
+    excludes: tuple[str, ...],
+    max_files: int,
+) -> None:
+    """Clean junk files."""
+    session = get_session(ctx)
+    _require_danger_mode(session, "Junk cleanup")
+    target_label = roots[0] if roots else Path.home()
+    _confirm_destructive(session, str(target_label))
+
+    json_output = ctx.obj.get("json_output", False)
+    options = JunkCleanupOptions(
+        roots=[str(root) for root in roots],
+        exclude_patterns=list(excludes),
+        max_files=max_files,
+    )
+    result = session.platform.cleanup_junk_files(options)
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(result.to_dict(), indent=2, default=str))
+        return
+
+    panel = Panel(
+        f"""[cyan]Removed:[/cyan] {len(result.removed_files)}
+[cyan]Failed:[/cyan] {len(result.failed_files)}
+[cyan]Freed:[/cyan] {humanize.naturalsize(result.freed_bytes, binary=True)}""",
+        title="Junk Cleanup",
+    )
+    console.print(panel)
+
+
+@cli.command("large-files")
+@click.option("--root", "roots", multiple=True, type=click.Path(path_type=Path))
+@click.option("--exclude", "excludes", multiple=True, help="Glob pattern to exclude")
+@click.option("--min-size", default="1G", help="Minimum file size")
+@click.option("--max-results", type=int, default=50, help="Maximum results to return")
+@click.option("--remove", is_flag=True, help="Remove discovered files")
+@click.pass_context
+def large_files(
+    ctx: click.Context,
+    roots: tuple[Path, ...],
+    excludes: tuple[str, ...],
+    min_size: str,
+    max_results: int,
+    remove: bool,
+) -> None:
+    """Find large files."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+    min_size_bytes = parse_size(min_size) or 0
+    options = LargeFileScanOptions(
+        roots=[str(root) for root in roots],
+        exclude_patterns=list(excludes),
+        min_size_bytes=min_size_bytes,
+        max_results=max_results,
+    )
+    scan = session.platform.scan_large_files(options)
+
+    removal_result = None
+    if remove and scan.files:
+        _require_danger_mode(session, "Large file removal")
+        target_label = roots[0] if roots else Path.home()
+        _confirm_destructive(session, str(target_label))
+        removal_result = session.platform.remove_large_files(
+            FileRemovalOptions(paths=[entry.path for entry in scan.files])
+        )
+
+    if json_output:
+        import json
+
+        payload = {"scan": scan.to_dict()}
+        if removal_result:
+            payload["removal"] = removal_result.to_dict()
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+
+    table = Table(title="Large Files")
+    table.add_column("Path", style="cyan")
+    table.add_column("Size", style="green")
+    for entry in scan.files:
+        table.add_row(entry.path, humanize.naturalsize(entry.size_bytes, binary=True))
+    console.print(table)
+    console.print(f"Total size: {humanize.naturalsize(scan.total_size_bytes, binary=True)}")
+    if removal_result:
+        console.print(
+            Panel(
+                removal_result.message,
+                title="Removal Summary",
+            )
+        )
+
+
+@cli.command("duplicates")
+@click.option("--root", "roots", multiple=True, type=click.Path(path_type=Path))
+@click.option("--exclude", "excludes", multiple=True, help="Glob pattern to exclude")
+@click.option("--min-size", default="32M", help="Minimum file size")
+@click.option("--remove", is_flag=True, help="Remove duplicates (keep one copy)")
+@click.pass_context
+def duplicates(
+    ctx: click.Context,
+    roots: tuple[Path, ...],
+    excludes: tuple[str, ...],
+    min_size: str,
+    remove: bool,
+) -> None:
+    """Detect duplicate files."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+    min_size_bytes = parse_size(min_size) or 0
+    options = DuplicateScanOptions(
+        roots=[str(root) for root in roots],
+        exclude_patterns=list(excludes),
+        min_size_bytes=min_size_bytes,
+    )
+    scan = session.platform.scan_duplicate_files(options)
+
+    removal_result = None
+    if remove and scan.duplicate_groups:
+        _require_danger_mode(session, "Duplicate removal")
+        target_label = roots[0] if roots else Path.home()
+        _confirm_destructive(session, str(target_label))
+        removal_result = session.platform.remove_duplicate_files(
+            DuplicateRemovalOptions(duplicate_groups=scan.duplicate_groups)
+        )
+
+    if json_output:
+        import json
+
+        payload = {"scan": scan.to_dict()}
+        if removal_result:
+            payload["removal"] = removal_result.to_dict()
+        click.echo(json.dumps(payload, indent=2, default=str))
+        return
+
+    console.print(
+        Panel(
+            f"Duplicate groups: {len(scan.duplicate_groups)}\n"
+            f"Wasted: {humanize.naturalsize(scan.total_wasted_bytes, binary=True)}",
+            title="Duplicate Scan",
+        )
+    )
+    if removal_result:
+        console.print(Panel(removal_result.message, title="Removal Summary"))
+
+
+@cli.command("move-app")
+@click.option("--source", "source_path", required=True, type=click.Path(path_type=Path))
+@click.option("--destination", "destination_root", required=True, type=click.Path(path_type=Path))
+@click.pass_context
+def move_app(ctx: click.Context, source_path: Path, destination_root: Path) -> None:
+    """Move an application directory to another drive."""
+    session = get_session(ctx)
+    _require_danger_mode(session, "Move application")
+    _confirm_destructive(session, str(source_path))
+
+    json_output = ctx.obj.get("json_output", False)
+    result = session.platform.move_application(
+        MoveApplicationOptions(
+            source_path=str(source_path),
+            destination_root=str(destination_root),
+        )
+    )
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(result.to_dict(), indent=2, default=str))
+        return
+
+    panel = Panel(
+        f"""[cyan]Success:[/cyan] {"Yes" if result.success else "No"}
+[cyan]Message:[/cyan] {result.message}
+[cyan]Destination:[/cyan] {result.destination_path}
+[cyan]Moved:[/cyan] {humanize.naturalsize(result.bytes_moved, binary=True)}""",
+        title="Move Application",
     )
     console.print(panel)
 
