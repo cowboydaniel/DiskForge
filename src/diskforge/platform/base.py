@@ -25,6 +25,11 @@ if TYPE_CHECKING:
         ConvertDiskOptions,
         MergePartitionsOptions,
         MigrationOptions,
+        AllocateFreeSpaceOptions,
+        OneClickAdjustOptions,
+        QuickPartitionOptions,
+        PartitionAttributeOptions,
+        InitializeDiskOptions,
         PartitionRecoveryOptions,
         ResizeMoveOptions,
         SplitPartitionOptions,
@@ -204,6 +209,66 @@ class PlatformBackend(ABC):
     ) -> tuple[bool, str]:
         """
         Shrink a partition.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def allocate_free_space(
+        self,
+        options: AllocateFreeSpaceOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Allocate free space between partitions.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def one_click_adjust_space(
+        self,
+        options: OneClickAdjustOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Auto-adjust space on a disk.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def quick_partition_disk(
+        self,
+        options: QuickPartitionOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Quickly partition a disk.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def change_partition_attributes(
+        self,
+        options: PartitionAttributeOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Change partition attributes (drive letter, label, type ID, serial number).
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def initialize_disk(
+        self,
+        options: InitializeDiskOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Initialize a disk with a partition style.
         Returns (success, message/error).
         """
 

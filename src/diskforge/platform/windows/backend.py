@@ -46,6 +46,11 @@ if TYPE_CHECKING:
         FormatOptions,
         MergePartitionsOptions,
         MigrationOptions,
+        AllocateFreeSpaceOptions,
+        OneClickAdjustOptions,
+        QuickPartitionOptions,
+        PartitionAttributeOptions,
+        InitializeDiskOptions,
         PartitionCreateOptions,
         PartitionRecoveryOptions,
         ResizeMoveOptions,
@@ -547,6 +552,46 @@ class WindowsBackend(PlatformBackend):
             context=context,
             dry_run=dry_run,
         )
+
+    def allocate_free_space(
+        self,
+        options: AllocateFreeSpaceOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        return False, "Allocate free space is not supported in the Windows backend yet"
+
+    def one_click_adjust_space(
+        self,
+        options: OneClickAdjustOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        return False, "One-click adjust space is not supported in the Windows backend yet"
+
+    def quick_partition_disk(
+        self,
+        options: QuickPartitionOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        return False, "Quick partitioning is not supported in the Windows backend yet"
+
+    def change_partition_attributes(
+        self,
+        options: PartitionAttributeOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        return False, "Changing partition attributes is not supported in the Windows backend yet"
+
+    def initialize_disk(
+        self,
+        options: InitializeDiskOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        return False, "Disk initialization is not supported in the Windows backend yet"
 
     def wipe_device(
         self,

@@ -624,6 +624,448 @@ New size: {humanize.naturalsize(size_bytes, binary=True)}""", title="Shrink Part
         sys.exit(1)
 
 
+@cli.command("allocate-free-space")
+@click.argument("disk")
+@click.argument("source_partition")
+@click.argument("target_partition")
+@click.option("--size", "-s", help="Space to allocate (e.g., 10G, 500M)")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def allocate_free_space(
+    ctx: click.Context,
+    disk: str,
+    source_partition: str,
+    target_partition: str,
+    size: str | None,
+    dry_run: bool,
+) -> None:
+    """Allocate free space between partitions."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import AllocateFreeSpaceOptions
+
+    size_bytes = parse_size(size) if size else None
+    if size and size_bytes is None:
+        console.print(f"[red]Invalid size format: {size}[/red]")
+        sys.exit(1)
+
+    options = AllocateFreeSpaceOptions(
+        disk_path=disk,
+        source_partition_path=source_partition,
+        target_partition_path=target_partition,
+        size_bytes=size_bytes,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Disk: {disk}
+From: {source_partition}
+To: {target_partition}
+Size: {humanize.naturalsize(size_bytes, binary=True) if size_bytes else "All available"}""", title="Allocate Free Space Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(disk)
+    console.print(f"[red]⚠️  This will reallocate space on {disk}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Allocating free space..."):
+        success, message = session.platform.allocate_free_space(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("one-click-adjust")
+@click.argument("disk")
+@click.option("--target-partition", help="Target partition device path")
+@click.option(
+    "--prioritize-system/--no-prioritize-system",
+    default=True,
+    help="Prioritize system partition during adjustment",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def one_click_adjust(
+    ctx: click.Context,
+    disk: str,
+    target_partition: str | None,
+    prioritize_system: bool,
+    dry_run: bool,
+) -> None:
+    """Run one-click space adjustment."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import OneClickAdjustOptions
+
+    options = OneClickAdjustOptions(
+        disk_path=disk,
+        target_partition_path=target_partition,
+        prioritize_system=prioritize_system,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Disk: {disk}
+Target: {target_partition or "Auto-select"}
+Prioritize system: {"Yes" if prioritize_system else "No"}""", title="One-Click Adjust Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(disk)
+    console.print(f"[red]⚠️  This will auto-adjust space on {disk}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Adjusting space..."):
+        success, message = session.platform.one_click_adjust_space(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("quick-partition")
+@click.argument("disk")
+@click.option("--count", type=int, default=2, show_default=True, help="Number of partitions")
+@click.option(
+    "--filesystem",
+    "-f",
+    type=click.Choice(["ext4", "ext3", "xfs", "btrfs", "ntfs", "fat32", "exfat"]),
+    default="ext4",
+    show_default=True,
+    help="Filesystem type",
+)
+@click.option("--label-prefix", help="Partition label prefix")
+@click.option("--size-per-partition", help="Size per partition (e.g., 10G, 500M)")
+@click.option(
+    "--use-entire-disk/--no-use-entire-disk",
+    default=True,
+    show_default=True,
+    help="Use entire disk capacity",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def quick_partition(
+    ctx: click.Context,
+    disk: str,
+    count: int,
+    filesystem: str,
+    label_prefix: str | None,
+    size_per_partition: str | None,
+    use_entire_disk: bool,
+    dry_run: bool,
+) -> None:
+    """Quickly partition a disk."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import QuickPartitionOptions
+
+    size_bytes = parse_size(size_per_partition) if size_per_partition else None
+    if size_per_partition and size_bytes is None:
+        console.print(f"[red]Invalid size format: {size_per_partition}[/red]")
+        sys.exit(1)
+
+    if count <= 0:
+        console.print("[red]Partition count must be greater than zero[/red]")
+        sys.exit(1)
+
+    if not use_entire_disk and size_bytes is None:
+        console.print("[red]Size per partition is required when not using entire disk[/red]")
+        sys.exit(1)
+
+    options = QuickPartitionOptions(
+        disk_path=disk,
+        partition_count=count,
+        filesystem=FileSystem(filesystem),
+        label_prefix=label_prefix,
+        partition_size_bytes=size_bytes,
+        use_entire_disk=use_entire_disk,
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Disk: {disk}
+Count: {count}
+Filesystem: {filesystem}
+Label prefix: {label_prefix or "(none)"}
+Size per partition: {humanize.naturalsize(size_bytes, binary=True) if size_bytes else "Auto"}
+Use entire disk: {"Yes" if use_entire_disk else "No"}""", title="Quick Partition Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(disk)
+    console.print(f"[red]⚠️  This will partition {disk}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Partitioning disk..."):
+        success, message = session.platform.quick_partition_disk(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("set-drive-letter")
+@click.argument("partition")
+@click.argument("letter")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def set_drive_letter(ctx: click.Context, partition: str, letter: str, dry_run: bool) -> None:
+    """Change a partition drive letter."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import PartitionAttributeOptions
+
+    letter = letter.strip().upper()
+    if len(letter) != 1 or not letter.isalpha():
+        console.print("[red]Drive letter must be a single alphabetic character[/red]")
+        sys.exit(1)
+
+    options = PartitionAttributeOptions(partition_path=partition, drive_letter=letter)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+Drive letter: {letter}""", title="Set Drive Letter Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will change drive letter for {partition}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Updating drive letter..."):
+        success, message = session.platform.change_partition_attributes(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("set-partition-label")
+@click.argument("partition")
+@click.argument("label")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def set_partition_label(ctx: click.Context, partition: str, label: str, dry_run: bool) -> None:
+    """Change a partition label."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import PartitionAttributeOptions
+
+    options = PartitionAttributeOptions(partition_path=partition, label=label)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+Label: {label}""", title="Set Partition Label Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will change label for {partition}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Updating label..."):
+        success, message = session.platform.change_partition_attributes(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("set-partition-type")
+@click.argument("partition")
+@click.argument("type_id")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def set_partition_type(ctx: click.Context, partition: str, type_id: str, dry_run: bool) -> None:
+    """Change a partition type ID."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import PartitionAttributeOptions
+
+    options = PartitionAttributeOptions(partition_path=partition, partition_type_id=type_id)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+Partition type ID: {type_id}""", title="Set Partition Type Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will change partition type for {partition}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Updating partition type..."):
+        success, message = session.platform.change_partition_attributes(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("set-partition-serial")
+@click.argument("partition")
+@click.argument("serial")
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def set_partition_serial(ctx: click.Context, partition: str, serial: str, dry_run: bool) -> None:
+    """Change a partition serial number."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import PartitionAttributeOptions
+
+    options = PartitionAttributeOptions(partition_path=partition, serial_number=serial)
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Partition: {partition}
+Serial: {serial}""", title="Set Partition Serial Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(partition)
+    console.print(f"[red]⚠️  This will change serial number for {partition}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Updating serial number..."):
+        success, message = session.platform.change_partition_attributes(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
+@cli.command("initialize-disk")
+@click.argument("disk")
+@click.option(
+    "--style",
+    type=click.Choice(["gpt", "mbr"], case_sensitive=False),
+    default="gpt",
+    show_default=True,
+    help="Partition style",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be done")
+@click.pass_context
+def initialize_disk(
+    ctx: click.Context,
+    disk: str,
+    style: str,
+    dry_run: bool,
+) -> None:
+    """Initialize a disk."""
+    session = get_session(ctx)
+
+    if session.danger_mode == DangerMode.DISABLED:
+        console.print("[red]Error: Danger mode required[/red]")
+        sys.exit(1)
+
+    from diskforge.core.models import InitializeDiskOptions, PartitionStyle
+
+    style_map = {"gpt": PartitionStyle.GPT, "mbr": PartitionStyle.MBR}
+    options = InitializeDiskOptions(
+        disk_path=disk,
+        partition_style=style_map[style.lower()],
+    )
+
+    if dry_run:
+        console.print(Panel(f"""[yellow]DRY RUN[/yellow]
+
+Disk: {disk}
+Style: {options.partition_style.name}""", title="Initialize Disk Plan"))
+        return
+
+    confirm_str = session.safety.generate_confirmation_string(disk)
+    console.print(f"[red]⚠️  This will initialize {disk}[/red]")
+    user_confirm = click.prompt(f"Type '{confirm_str}' to confirm")
+
+    if user_confirm != confirm_str:
+        console.print("[red]Confirmation failed[/red]")
+        sys.exit(1)
+
+    with console.status("Initializing disk..."):
+        success, message = session.platform.initialize_disk(options)
+
+    if success:
+        console.print(f"[green]✓ {message}[/green]")
+    else:
+        console.print(f"[red]✗ {message}[/red]")
+        sys.exit(1)
+
+
 @cli.command("align-4k")
 @click.argument("partition")
 @click.option("--dry-run", is_flag=True, help="Show what would be done")
