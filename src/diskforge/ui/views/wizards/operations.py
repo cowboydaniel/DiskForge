@@ -756,6 +756,73 @@ class CreateBackupWizard(DiskForgeWizard):
         self._compression_level_combo.setEnabled(selection != "none")
 
 
+class SystemBackupWizard(DiskForgeWizard):
+    def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("System Backup")
+        self._session = session
+        self._status_callback = status_callback
+
+        output_page = DirectoryPage(
+            "Backup Destination",
+            "Select the output folder for the system backup.",
+            "Select Backup Folder",
+        )
+
+        options_page = QWizardPage()
+        options_page.setTitle("System Backup Options")
+        options_layout = QFormLayout(options_page)
+        self._compression_combo = QComboBox()
+        self._compression_combo.addItems(["zstd (recommended)", "gzip", "none"])
+        self._compression_level_combo = QComboBox()
+        self._compression_level_combo.addItem("Balanced", CompressionLevel.BALANCED)
+        self._compression_level_combo.addItem("Fast", CompressionLevel.FAST)
+        self._compression_level_combo.addItem("Maximum", CompressionLevel.MAXIMUM)
+        self._backup_mode_combo = QComboBox()
+        self._backup_mode_combo.addItem("Intelligent backup (recommended)", CloneMode.INTELLIGENT)
+        self._backup_mode_combo.addItem("Sector-by-sector backup", CloneMode.SECTOR_BY_SECTOR)
+        self._backup_validate_check = QCheckBox("Validate backup after creation")
+        self._backup_validate_check.setChecked(True)
+        options_layout.addRow("Compression:", self._compression_combo)
+        options_layout.addRow("Compression level:", self._compression_level_combo)
+        options_layout.addRow("Backup mode:", self._backup_mode_combo)
+        options_layout.addRow("", self._backup_validate_check)
+        self._compression_combo.currentTextChanged.connect(self._on_compression_changed)
+        self._on_compression_changed(self._compression_combo.currentText())
+
+        result_page = OperationResultPage(
+            "System Backup",
+            lambda: self._create_system_backup(output_page.path()),
+            status_callback,
+            "Creating system backup...",
+        )
+
+        self.addPage(output_page)
+        self.addPage(options_page)
+        self.addPage(result_page)
+
+    def _create_system_backup(self, output_path: str) -> OperationResult:
+        compress_map = {
+            "zstd (recommended)": "zstd",
+            "gzip": "gzip",
+            "none": None,
+        }
+        compression = compress_map[self._compression_combo.currentText()]
+        compression_level = self._compression_level_combo.currentData() if compression else None
+        success, message, _info = self._session.platform.create_system_backup(
+            Path(output_path),
+            compression=compression,
+            compression_level=compression_level,
+            verify=self._backup_validate_check.isChecked(),
+            mode=self._backup_mode_combo.currentData(),
+            profile=self._session.config.system_backup,
+        )
+        return OperationResult(success=success, message=message)
+
+    def _on_compression_changed(self, selection: str) -> None:
+        self._compression_level_combo.setEnabled(selection != "none")
+
+
 class RestoreBackupWizard(DiskForgeWizard):
     def __init__(self, session: Session, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
         super().__init__(parent)

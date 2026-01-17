@@ -108,6 +108,7 @@ class OperationsTreeWidget(QTreeView):
                     "create_backup",
                     self._icon("document-save", QStyle.SP_DialogSaveButton),
                 ),
+                ("System Backup", "system_backup", self._icon("document-save", QStyle.SP_DialogSaveButton)),
                 ("Disk Restore", "restore_backup", self._icon("document-open", QStyle.SP_DirOpenIcon)),
             ],
         )

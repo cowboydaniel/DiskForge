@@ -52,6 +52,7 @@ from diskforge.ui.views.wizards import (
     CloneDiskWizard,
     ClonePartitionWizard,
     CreateBackupWizard,
+    SystemBackupWizard,
     RestoreBackupWizard,
     RescueMediaWizard,
     ResizeMovePartitionWizard,
@@ -147,6 +148,7 @@ class MainWindow(QMainWindow):
             "clone_partition": QAction("Copy Partition Wizard (Advanced)...", self),
             "backup": QAction("Disk Backup (Advanced)", self),
             "create_backup": QAction("Disk Backup (Advanced)...", self),
+            "system_backup": QAction("System Backup...", self),
             "restore_backup": QAction("Disk Restore...", self),
             "rescue_media": QAction("Make Bootable Media...", self),
             "integrate_recovery_env": QAction("Integrate to Recovery Environment...", self),
@@ -210,6 +212,7 @@ class MainWindow(QMainWindow):
             "clone_partition": DiskForgeIcons.CLONE_PARTITION,
             "backup": DiskForgeIcons.CREATE_BACKUP,
             "create_backup": DiskForgeIcons.CREATE_BACKUP,
+            "system_backup": DiskForgeIcons.CREATE_BACKUP,
             "restore_backup": DiskForgeIcons.RESTORE_BACKUP,
             "rescue_media": DiskForgeIcons.RESCUE_MEDIA,
             "integrate_recovery_env": DiskForgeIcons.RESCUE_MEDIA,
@@ -277,6 +280,7 @@ class MainWindow(QMainWindow):
         actions["clone_disk"].triggered.connect(self._on_clone_disk)
         actions["clone_partition"].triggered.connect(self._on_clone_partition)
         actions["create_backup"].triggered.connect(self._on_create_backup)
+        actions["system_backup"].triggered.connect(self._on_system_backup)
         actions["restore_backup"].triggered.connect(self._on_restore_backup)
         actions["rescue_media"].triggered.connect(self._on_create_rescue)
         actions["integrate_recovery_env"].triggered.connect(self._on_integrate_recovery_env)
@@ -336,6 +340,7 @@ class MainWindow(QMainWindow):
         actions["clone_disk"].setStatusTip("Clone a disk with intelligent/sector-by-sector options")
         actions["clone_partition"].setStatusTip("Clone a partition with validation and scheduling options")
         actions["create_backup"].setStatusTip("Create a backup with compression levels and validation options")
+        actions["system_backup"].setStatusTip("Capture OS partitions and boot metadata in a system backup bundle")
         actions["restore_backup"].setStatusTip("Restore a backup image to a disk or partition")
 
         return actions
@@ -515,7 +520,10 @@ class MainWindow(QMainWindow):
             [
                 RibbonGroup(
                     "Backup",
-                    columns=[[RibbonButton(self._actions["backup"])]],
+                    columns=[
+                        [RibbonButton(self._actions["backup"])],
+                        [RibbonButton(self._actions["system_backup"], size="small")],
+                    ],
                 ),
             ],
         )
@@ -2517,6 +2525,15 @@ class MainWindow(QMainWindow):
         wizard = CreateBackupWizard(
             self._session,
             source_path,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_system_backup(self) -> None:
+        """Handle system backup action."""
+        wizard = SystemBackupWizard(
+            self._session,
             self._status_label.setText,
             self,
         )

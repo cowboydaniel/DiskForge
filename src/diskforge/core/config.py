@@ -53,6 +53,18 @@ class BackupConfig(BaseModel):
     temp_directory: Path | None = None
 
 
+class SystemBackupConfig(BaseModel):
+    """Configuration for system-level backups."""
+
+    include_recovery_partitions: bool = True
+    include_swap_partitions: bool = False
+    include_hidden_partitions: bool = True
+    include_reserved_partitions: bool = True
+    required_mountpoints: list[str] = Field(default_factory=lambda: ["/", "/boot", "/boot/efi"])
+    capture_partition_table: bool = True
+    capture_boot_metadata: bool = True
+
+
 class UIConfig(BaseModel):
     """Configuration for the GUI."""
 
@@ -68,6 +80,7 @@ class DiskForgeConfig(BaseModel):
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
+    system_backup: SystemBackupConfig = Field(default_factory=SystemBackupConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
     session_directory: Path = Field(default_factory=lambda: Path.home() / ".diskforge" / "sessions")
     plugin_directories: list[Path] = Field(default_factory=list)
