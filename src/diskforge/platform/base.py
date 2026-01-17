@@ -29,6 +29,7 @@ if TYPE_CHECKING:
         ConvertSystemDiskOptions,
         DuplicateRemovalOptions,
         DuplicateScanOptions,
+        FileRecoveryOptions,
         MergePartitionsOptions,
         MigrationOptions,
         AllocateFreeSpaceOptions,
@@ -45,6 +46,7 @@ if TYPE_CHECKING:
         MoveApplicationOptions,
         ResizeMoveOptions,
         SplitPartitionOptions,
+        ShredOptions,
         WipeOptions,
         DuplicateScanResult,
         FileRemovalResult,
@@ -645,3 +647,23 @@ class PlatformBackend(ABC):
     @abstractmethod
     def move_application(self, options: MoveApplicationOptions) -> MoveApplicationResult:
         """Move an application directory to another drive."""
+
+    # ==================== Recovery & Shredding Operations ====================
+
+    @abstractmethod
+    def recover_files(
+        self,
+        options: FileRecoveryOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Attempt to recover deleted files."""
+
+    @abstractmethod
+    def shred_files(
+        self,
+        options: ShredOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Securely shred files or folders."""

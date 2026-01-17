@@ -71,6 +71,7 @@ if TYPE_CHECKING:
         DynamicVolumeResizeMoveOptions,
         DuplicateRemovalOptions,
         DuplicateScanOptions,
+        FileRecoveryOptions,
         FileRemovalOptions,
         FreeSpaceOptions,
         JunkCleanupOptions,
@@ -78,6 +79,7 @@ if TYPE_CHECKING:
         MoveApplicationOptions,
         ResizeMoveOptions,
         SplitPartitionOptions,
+        ShredOptions,
         WipeOptions,
     )
 
@@ -130,6 +132,7 @@ class LinuxBackend(PlatformBackend):
 
     # Wipe tools
     SHRED = "shred"
+    PHOTOREC = "photorec"
 
     @property
     def name(self) -> str:
@@ -145,6 +148,96 @@ class LinuxBackend(PlatformBackend):
     def _check_tool(self, tool: str) -> bool:
         """Check if a tool is available."""
         return shutil.which(tool) is not None
+
+    def _python_shred_file(self, path: Path, passes: int, zero_fill: bool) -> tuple[bool, str]:
+        try:
+            if path.is_symlink():
+                path.unlink()
+                return True, f"Removed symlink {path}"
+
+            size = path.stat().st_size
+            chunk_size = 1024 * 1024
+
+            with path.open("r+b", buffering=0) as handle:
+                for pass_index in range(passes):
+                    handle.seek(0)
+                    remaining = size
+                    while remaining > 0:
+                        block = min(chunk_size, remaining)
+                        if pass_index == passes - 1 and zero_fill:
+                            data = b"\x00" * block
+                        else:
+                            data = os.urandom(block)
+                        handle.write(data)
+                        remaining -= block
+                    handle.flush()
+                    os.fsync(handle.fileno())
+
+            path.unlink()
+            return True, f"Shredded {path}"
+        except OSError as exc:
+            return False, f"Failed to shred {path}: {exc}"
+
+    def _shred_path(
+        self,
+        path: Path,
+        passes: int,
+        zero_fill: bool,
+        follow_symlinks: bool,
+    ) -> tuple[bool, str]:
+        if path.is_symlink() and not follow_symlinks:
+            try:
+                path.unlink()
+                return True, f"Removed symlink {path}"
+            except OSError as exc:
+                return False, f"Failed to remove symlink {path}: {exc}"
+
+        if path.is_dir():
+            errors: list[str] = []
+            for root, dirs, files in os.walk(path, topdown=False, followlinks=follow_symlinks):
+                for filename in files:
+                    file_path = Path(root) / filename
+                    success, message = self._shred_path(
+                        file_path,
+                        passes,
+                        zero_fill,
+                        follow_symlinks,
+                    )
+                    if not success:
+                        errors.append(message)
+                for dirname in dirs:
+                    dir_path = Path(root) / dirname
+                    if dir_path.is_symlink() and not follow_symlinks:
+                        try:
+                            dir_path.unlink()
+                        except OSError as exc:
+                            errors.append(f"Failed to remove symlink {dir_path}: {exc}")
+                        continue
+                    try:
+                        dir_path.rmdir()
+                    except OSError:
+                        pass
+
+            try:
+                path.rmdir()
+            except OSError:
+                pass
+
+            if errors:
+                return False, "; ".join(errors)
+            return True, f"Shredded directory {path}"
+
+        if self._check_tool(self.SHRED):
+            cmd = [self.SHRED, "-u", "-n", str(passes)]
+            if zero_fill:
+                cmd.append("-z")
+            cmd.append(str(path))
+            result = self.run_command(cmd, timeout=86400, check=False)
+            if not result.success:
+                return False, f"shred failed for {path}: {result.stderr or result.stdout}"
+            return True, f"Shredded {path}"
+
+        return self._python_shred_file(path, passes, zero_fill)
 
     def _get_defrag_command(self, partition: Partition) -> tuple[list[str] | None, str | None]:
         """Build defragmentation command for a partition."""
@@ -882,6 +975,78 @@ class LinuxBackend(PlatformBackend):
             "Partition recovery requires external tooling (e.g., testdisk)",
             artifacts,
         )
+
+    def recover_files(
+        self,
+        options: FileRecoveryOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str, dict[str, Any]]:
+        """Attempt to recover deleted files."""
+        artifacts: dict[str, Any] = {"output": str(options.output_path)}
+
+        if context:
+            context.update_progress(message="Preparing file recovery")
+
+        if dry_run:
+            return True, f"Would recover files from {options.source_path}", artifacts
+
+        if not self._check_tool(self.PHOTOREC):
+            return (
+                False,
+                "File recovery requires photorec (install the testdisk package)",
+                artifacts,
+            )
+
+        options.output_path.mkdir(parents=True, exist_ok=True)
+
+        cmd = [
+            self.PHOTOREC,
+            "/log",
+            "/d",
+            str(options.output_path),
+            "/cmd",
+            options.source_path,
+            "search",
+        ]
+        result = self.run_command(cmd, timeout=86400, check=False)
+        if not result.success:
+            return False, f"File recovery failed: {result.stderr or result.stdout}", artifacts
+
+        return True, f"Recovery complete. Output: {options.output_path}", artifacts
+
+    def shred_files(
+        self,
+        options: ShredOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """Securely shred files or folders."""
+        targets = [Path(target) for target in options.targets]
+        missing = [str(target) for target in targets if not target.exists() and not target.is_symlink()]
+        if missing:
+            return False, f"Targets not found: {', '.join(missing)}"
+
+        if context:
+            context.update_progress(message="Shredding files")
+
+        if dry_run:
+            return True, f"Would shred {len(targets)} target(s)"
+
+        errors: list[str] = []
+        for target in targets:
+            success, message = self._shred_path(
+                target,
+                max(1, options.passes),
+                options.zero_fill,
+                options.follow_symlinks,
+            )
+            if not success:
+                errors.append(message)
+
+        if errors:
+            return False, "; ".join(errors)
+        return True, "Shredding completed"
 
     def align_partition_4k(
         self,

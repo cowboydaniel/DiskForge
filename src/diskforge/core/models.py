@@ -449,6 +449,25 @@ class WipeOptions:
 
 
 @dataclass
+class FileRecoveryOptions:
+    """Options for recovering deleted files."""
+
+    source_path: str
+    output_path: Path
+    deep_scan: bool = True
+
+
+@dataclass
+class ShredOptions:
+    """Options for shredding files or folders."""
+
+    targets: list[str]
+    passes: int = 3
+    zero_fill: bool = True
+    follow_symlinks: bool = False
+
+
+@dataclass
 class PartitionRecoveryOptions:
     """Options for partition recovery."""
 
