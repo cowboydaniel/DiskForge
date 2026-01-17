@@ -91,6 +91,8 @@ class LinuxBackend(PlatformBackend):
     RESIZE2FS = "resize2fs"
     XFS_GROWFS = "xfs_growfs"
     BTRFS = "btrfs"
+    E4DEFRAG = "e4defrag"
+    XFS_FSR = "xfs_fsr"
 
     # Compression tools
     GZIP = "gzip"
@@ -121,6 +123,31 @@ class LinuxBackend(PlatformBackend):
     def _check_tool(self, tool: str) -> bool:
         """Check if a tool is available."""
         return shutil.which(tool) is not None
+
+    def _get_defrag_command(self, partition: Partition) -> tuple[list[str] | None, str | None]:
+        """Build defragmentation command for a partition."""
+        if not partition.mountpoint:
+            return None, f"Partition {partition.device_path} must be mounted to defragment"
+
+        filesystem = partition.filesystem
+        mountpoint = partition.mountpoint
+
+        if filesystem in {FileSystem.EXT2, FileSystem.EXT3, FileSystem.EXT4}:
+            if not self._check_tool(self.E4DEFRAG):
+                return None, "e4defrag not found (required for ext defragmentation)"
+            return [self.E4DEFRAG, mountpoint], None
+
+        if filesystem == FileSystem.BTRFS:
+            if not self._check_tool(self.BTRFS):
+                return None, "btrfs not found (required for btrfs defragmentation)"
+            return [self.BTRFS, "filesystem", "defragment", "-r", mountpoint], None
+
+        if filesystem == FileSystem.XFS:
+            if not self._check_tool(self.XFS_FSR):
+                return None, "xfs_fsr not found (required for xfs defragmentation)"
+            return [self.XFS_FSR, mountpoint], None
+
+        return None, f"Defragmentation not supported for filesystem: {filesystem.value}"
 
     def _get_required_tools(self) -> list[str]:
         """Get list of required tools."""
@@ -864,6 +891,82 @@ class LinuxBackend(PlatformBackend):
             verify=True,
             dry_run=dry_run,
         )
+
+    def defrag_disk(
+        self,
+        device_path: str,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        disk = self.get_disk_info(device_path)
+        if not disk:
+            return False, f"Disk not found: {device_path}"
+
+        successes: list[str] = []
+        skipped: list[str] = []
+        failures: list[str] = []
+
+        for partition in disk.partitions:
+            command, error = self._get_defrag_command(partition)
+            if command is None:
+                skipped.append(f"{partition.device_path}: {error}")
+                continue
+
+            if context:
+                context.update_progress(message=f"Defragmenting {partition.device_path}")
+
+            if dry_run:
+                successes.append(f"Would run: {' '.join(command)}")
+                continue
+
+            result = self.run_command(command, timeout=86400, check=False)
+            if result.success:
+                successes.append(f"Defragmented {partition.device_path}")
+            else:
+                failures.append(f"{partition.device_path}: {result.stderr or 'defrag failed'}")
+
+        summary_lines = []
+        if successes:
+            summary_lines.append("Successful:")
+            summary_lines.extend(f"  - {line}" for line in successes)
+        if skipped:
+            summary_lines.append("Skipped:")
+            summary_lines.extend(f"  - {line}" for line in skipped)
+        if failures:
+            summary_lines.append("Failed:")
+            summary_lines.extend(f"  - {line}" for line in failures)
+
+        if failures:
+            return False, "\n".join(summary_lines)
+        if successes:
+            return True, "\n".join(summary_lines)
+        return False, "\n".join(summary_lines or [f"No defragmentable partitions found on {device_path}"])
+
+    def defrag_partition(
+        self,
+        partition_path: str,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        partition = self.get_partition_info(partition_path)
+        if not partition:
+            return False, f"Partition not found: {partition_path}"
+
+        command, error = self._get_defrag_command(partition)
+        if command is None:
+            return False, error or "Unable to build defragmentation command"
+
+        if context:
+            context.update_progress(message=f"Defragmenting {partition.device_path}")
+
+        if dry_run:
+            return True, f"Would run: {' '.join(command)}"
+
+        result = self.run_command(command, timeout=86400, check=False)
+        if not result.success:
+            return False, f"Defragmentation failed: {result.stderr}"
+
+        return True, f"Defragmented {partition.device_path}"
 
     # ==================== Clone Operations ====================
 

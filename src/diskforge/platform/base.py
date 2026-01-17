@@ -332,6 +332,32 @@ class PlatformBackend(ABC):
         Returns (success, message/error).
         """
 
+    # ==================== Maintenance Operations ====================
+
+    @abstractmethod
+    def defrag_disk(
+        self,
+        device_path: str,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Defragment a disk's partitions.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def defrag_partition(
+        self,
+        partition_path: str,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Defragment a partition.
+        Returns (success, message/error).
+        """
+
     # ==================== Clone Operations ====================
 
     @abstractmethod

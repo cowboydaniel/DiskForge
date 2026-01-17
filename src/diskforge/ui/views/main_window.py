@@ -65,6 +65,8 @@ from diskforge.ui.views.wizards import (
     InitializeDiskWizard,
     WipeWizard,
     PartitionRecoveryWizard,
+    DefragDiskWizard,
+    DefragPartitionWizard,
     Align4KWizard,
     ConvertPartitionStyleWizard,
     SystemMigrationWizard,
@@ -131,6 +133,8 @@ class MainWindow(QMainWindow):
             "initialize_disk": QAction("Initialize Disk...", self),
             "wipe_device": QAction("Wipe/Secure Erase...", self),
             "partition_recovery": QAction("Partition Recovery...", self),
+            "defrag_disk": QAction("Defragment Disk...", self),
+            "defrag_partition": QAction("Defragment Partition...", self),
             "align_4k": QAction("Align 4K...", self),
             "convert_partition_style": QAction("Convert MBR/GPT...", self),
             "migrate_system": QAction("OS/System Migration...", self),
@@ -163,6 +167,8 @@ class MainWindow(QMainWindow):
             "initialize_disk": DiskForgeIcons.CLONE_DISK,
             "wipe_device": DiskForgeIcons.DELETE_PARTITION,
             "partition_recovery": DiskForgeIcons.RESTORE_BACKUP,
+            "defrag_disk": DiskForgeIcons.REFRESH,
+            "defrag_partition": DiskForgeIcons.REFRESH,
             "align_4k": DiskForgeIcons.CREATE_PARTITION,
             "convert_partition_style": DiskForgeIcons.CLONE_DISK,
             "migrate_system": DiskForgeIcons.CLONE_DISK,
@@ -199,6 +205,8 @@ class MainWindow(QMainWindow):
         actions["initialize_disk"].triggered.connect(self._on_initialize_disk)
         actions["wipe_device"].triggered.connect(self._on_wipe_device)
         actions["partition_recovery"].triggered.connect(self._on_partition_recovery)
+        actions["defrag_disk"].triggered.connect(self._on_defrag_disk)
+        actions["defrag_partition"].triggered.connect(self._on_defrag_partition)
         actions["align_4k"].triggered.connect(self._on_align_4k)
         actions["convert_partition_style"].triggered.connect(self._on_convert_partition_style)
         actions["migrate_system"].triggered.connect(self._on_migrate_system)
@@ -275,6 +283,7 @@ class MainWindow(QMainWindow):
                         [
                             RibbonButton(self._actions["split_partition"], size="small"),
                             RibbonButton(self._actions["align_4k"], size="small"),
+                            RibbonButton(self._actions["defrag_partition"], size="small"),
                         ],
                         [RibbonButton(self._actions["edit_partition_attributes"], size="small")],
                     ],
@@ -285,6 +294,7 @@ class MainWindow(QMainWindow):
                     columns=[
                         [RibbonButton(self._actions["convert_partition_style"])],
                         [
+                            RibbonButton(self._actions["defrag_disk"], size="small"),
                             RibbonButton(self._actions["wipe_device"], size="small"),
                             RibbonButton(self._actions["partition_recovery"], size="small"),
                         ],
@@ -735,6 +745,12 @@ class MainWindow(QMainWindow):
             )
             backup_action.triggered.connect(lambda: self._backup_device(item.device_path))
 
+            defrag_action = menu.addAction(
+                self._actions["defrag_disk"].icon(),
+                "Defragment Disk...",
+            )
+            defrag_action.triggered.connect(lambda: self._defrag_disk(item))
+
             menu.addSeparator()
 
             create_part_action = menu.addAction(
@@ -789,6 +805,12 @@ class MainWindow(QMainWindow):
                 "Format...",
             )
             format_action.triggered.connect(lambda: self._format_partition(item))
+
+            defrag_action = menu.addAction(
+                self._actions["defrag_partition"].icon(),
+                "Defragment...",
+            )
+            defrag_action.triggered.connect(lambda: self._defrag_partition(item))
 
             delete_action = menu.addAction(
                 self._actions["delete_partition"].icon(),
@@ -1333,6 +1355,69 @@ class MainWindow(QMainWindow):
         wizard = PartitionRecoveryWizard(
             self._session,
             inventory.disks,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_defrag_disk(self) -> None:
+        """Handle defragment disk action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Disk):
+            self._defrag_disk(item)
+            return
+        if isinstance(item, Partition):
+            disk = self._find_parent_disk(item)
+            if disk:
+                self._defrag_disk(disk)
+                return
+        QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+
+    def _defrag_disk(self, disk: Disk) -> None:
+        """Defragment a disk."""
+        if not disk.partitions:
+            QMessageBox.warning(self, "No Partitions", "No partitions available to defragment.")
+            return
+
+        wizard = DefragDiskWizard(
+            self._session,
+            disk,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_defrag_partition(self) -> None:
+        """Handle defragment partition action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a partition first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if isinstance(item, Partition):
+            self._defrag_partition(item)
+        else:
+            QMessageBox.warning(self, "Invalid Selection", "Please select a partition, not a disk.")
+
+    def _defrag_partition(self, partition: Partition) -> None:
+        """Defragment a partition."""
+        if not partition.mountpoint and not partition.drive_letter:
+            QMessageBox.warning(
+                self,
+                "Partition Not Mounted",
+                "Defragmentation requires a mounted partition or drive letter.",
+            )
+            return
+
+        wizard = DefragPartitionWizard(
+            self._session,
+            partition,
             self._status_label.setText,
             self,
         )

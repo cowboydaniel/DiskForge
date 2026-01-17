@@ -66,6 +66,7 @@ class WindowsBackend(PlatformBackend):
 
     POWERSHELL = "powershell.exe"
     DISKPART = "diskpart.exe"
+    DEFRAG = "defrag.exe"
 
     @property
     def name(self) -> str:
@@ -181,6 +182,14 @@ class WindowsBackend(PlatformBackend):
                 os.unlink(script_path)
             except OSError:
                 pass
+
+    def _get_drive_letter(self, partition: Partition) -> str | None:
+        if partition.drive_letter:
+            return partition.drive_letter.rstrip(":")
+        mountpoint = partition.mountpoint or ""
+        if len(mountpoint) >= 2 and mountpoint[1] == ":":
+            return mountpoint[0]
+        return None
 
     def get_disk_inventory(self) -> DiskInventory:
         """Get complete disk inventory using PowerShell."""
@@ -754,6 +763,84 @@ class WindowsBackend(PlatformBackend):
             verify=True,
             dry_run=dry_run,
         )
+
+    def defrag_disk(
+        self,
+        device_path: str,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        disk = self.get_disk_info(device_path)
+        if not disk:
+            return False, f"Disk not found: {device_path}"
+
+        successes: list[str] = []
+        skipped: list[str] = []
+        failures: list[str] = []
+
+        for partition in disk.partitions:
+            drive_letter = self._get_drive_letter(partition)
+            if not drive_letter:
+                skipped.append(f"{partition.device_path}: no drive letter assigned")
+                continue
+
+            command = [self.DEFRAG, f"{drive_letter}:", "/U", "/V"]
+            if context:
+                context.update_progress(message=f"Defragmenting {drive_letter}:")
+
+            if dry_run:
+                successes.append(f"Would run: {' '.join(command)}")
+                continue
+
+            result = self.run_command(command, timeout=86400, check=False)
+            if result.success:
+                successes.append(f"Defragmented {drive_letter}:")
+            else:
+                failures.append(f"{drive_letter}: {result.stderr or 'defrag failed'}")
+
+        summary_lines = []
+        if successes:
+            summary_lines.append("Successful:")
+            summary_lines.extend(f"  - {line}" for line in successes)
+        if skipped:
+            summary_lines.append("Skipped:")
+            summary_lines.extend(f"  - {line}" for line in skipped)
+        if failures:
+            summary_lines.append("Failed:")
+            summary_lines.extend(f"  - {line}" for line in failures)
+
+        if failures:
+            return False, "\n".join(summary_lines)
+        if successes:
+            return True, "\n".join(summary_lines)
+        return False, "\n".join(summary_lines or [f"No defragmentable volumes found on {device_path}"])
+
+    def defrag_partition(
+        self,
+        partition_path: str,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        partition = self.get_partition_info(partition_path)
+        if not partition:
+            return False, f"Partition not found: {partition_path}"
+
+        drive_letter = self._get_drive_letter(partition)
+        if not drive_letter:
+            return False, f"No drive letter assigned to {partition_path}"
+
+        command = [self.DEFRAG, f"{drive_letter}:", "/U", "/V"]
+        if context:
+            context.update_progress(message=f"Defragmenting {drive_letter}:")
+
+        if dry_run:
+            return True, f"Would run: {' '.join(command)}"
+
+        result = self.run_command(command, timeout=86400, check=False)
+        if not result.success:
+            return False, f"Defragmentation failed: {result.stderr}"
+
+        return True, f"Defragmented {drive_letter}:"
 
     # ==================== Clone Operations ====================
 
