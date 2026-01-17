@@ -60,6 +60,8 @@ from diskforge.core.models import (
     ResizeMoveOptions,
     SplitPartitionOptions,
     ShredOptions,
+    SSDSecureEraseOptions,
+    SystemDiskWipeOptions,
     WipeOptions,
 )
 from diskforge.core.session import Session
@@ -1539,6 +1541,218 @@ class WipeWizard(DiskForgeWizard):
             passes=passes,
         )
         success, message = self._session.platform.wipe_device(options)
+        return OperationResult(success=success, message=message)
+
+
+class SystemDiskWipeWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("System Disk Wipe")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+        self._compatibility_ok = False
+
+        warning_page = QWizardPage()
+        warning_page.setTitle("Critical Warning")
+        warning_layout = QVBoxLayout(warning_page)
+        warning_text = QLabel(
+            "You are about to wipe the system disk. This will erase the operating system, "
+            "all applications, and all data on the disk. This operation should only be run "
+            "from external boot media or a recovery environment."
+        )
+        warning_text.setWordWrap(True)
+        warning_layout.addWidget(warning_text)
+        self._backup_checkbox = QCheckBox("I have a verified backup of all important data.")
+        self._offline_checkbox = QCheckBox("I am running from external boot media or recovery environment.")
+        self._irreversible_checkbox = QCheckBox("I understand this action is irreversible.")
+        for checkbox in (self._backup_checkbox, self._offline_checkbox, self._irreversible_checkbox):
+            checkbox.stateChanged.connect(warning_page.completeChanged)
+            warning_layout.addWidget(checkbox)
+
+        warning_page.isComplete = lambda: all(  # type: ignore[assignment]
+            checkbox.isChecked()
+            for checkbox in (self._backup_checkbox, self._offline_checkbox, self._irreversible_checkbox)
+        )
+
+        method_page = QWizardPage()
+        method_page.setTitle("Wipe Method")
+        method_layout = QFormLayout(method_page)
+        self._method_combo = QComboBox()
+        self._method_combo.addItems(["zero", "random", "dod"])
+        self._passes_input = QLineEdit("1")
+        self._passes_input.textChanged.connect(method_page.completeChanged)
+        method_layout.addRow("Method:", self._method_combo)
+        method_layout.addRow("Passes:", self._passes_input)
+        method_layout.addRow(QLabel(f"Target system disk: {disk.device_path}"))
+        method_page.isComplete = lambda: self._passes_input.text().strip().isdigit()  # type: ignore[assignment]
+
+        compatibility_page = QWizardPage()
+        compatibility_page.setTitle("Compatibility Check")
+        compat_layout = QVBoxLayout(compatibility_page)
+        compat_intro = QLabel("Compatibility checks must pass before wiping the system disk.")
+        compat_intro.setWordWrap(True)
+        compat_layout.addWidget(compat_intro)
+        self._compatibility_output = QTextEdit()
+        self._compatibility_output.setReadOnly(True)
+        compat_layout.addWidget(self._compatibility_output)
+        compatibility_page.isComplete = lambda: self._compatibility_ok  # type: ignore[assignment]
+
+        def _run_compat_checks() -> None:
+            refreshed = self._session.platform.refresh_disk(self._disk.device_path)
+            disk_info = refreshed or self._disk
+            checks = []
+            ok = True
+
+            if not disk_info.is_system_disk:
+                ok = False
+                checks.append("✗ Target is not marked as the system disk.")
+            else:
+                checks.append("✓ Disk is marked as the system disk.")
+
+            mounted_parts = [part.device_path for part in disk_info.partitions if part.is_mounted]
+            if mounted_parts:
+                ok = False
+                checks.append(f"✗ Mounted partitions detected: {', '.join(mounted_parts)}")
+            else:
+                checks.append("✓ No mounted partitions detected.")
+
+            if self._session.platform.requires_admin and not self._session.platform.is_admin():
+                ok = False
+                checks.append("✗ Administrator/root privileges are required.")
+            else:
+                checks.append("✓ Required privileges detected.")
+
+            checks.append(f"Target: {disk_info.device_path}")
+            self._compatibility_output.setText("\n".join(checks))
+            self._compatibility_ok = ok
+            compatibility_page.completeChanged.emit()
+
+        compatibility_page.initializePage = _run_compat_checks  # type: ignore[assignment]
+
+        confirm_phrase = f"WIPE SYSTEM DISK {disk.device_path}"
+        confirm_page = ConfirmationPage(
+            "Confirm System Disk Wipe",
+            "This will ERASE THE SYSTEM DISK and remove the operating system.",
+            confirm_phrase,
+        )
+
+        result_page = OperationResultPage(
+            "System Disk Wipe",
+            self._wipe_system_disk,
+            status_callback,
+            f"Wiping system disk {disk.device_path}...",
+        )
+
+        self.addPage(warning_page)
+        self.addPage(method_page)
+        self.addPage(compatibility_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _wipe_system_disk(self) -> OperationResult:
+        passes = int(self._passes_input.text().strip() or "1")
+        options = SystemDiskWipeOptions(
+            disk_path=self._disk.device_path,
+            method=self._method_combo.currentText(),
+            passes=passes,
+            allow_system_disk=True,
+            require_offline=True,
+        )
+        success, message = self._session.platform.wipe_system_disk(options)
+        return OperationResult(success=success, message=message)
+
+
+class SSDSecureEraseWizard(DiskForgeWizard):
+    def __init__(self, session: Session, disk: Disk, status_callback: Callable[[str], None], parent: QWizard | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("SSD Secure Erase")
+        self._session = session
+        self._disk = disk
+        self._status_callback = status_callback
+        self.refresh_on_success = True
+        self._compatibility_ok = False
+
+        warning_page = QWizardPage()
+        warning_page.setTitle("Secure Erase Warning")
+        warning_layout = QVBoxLayout(warning_page)
+        warning_text = QLabel(
+            "SSD secure erase issues a hardware-level erase command. This permanently removes "
+            "data on the SSD and may not be recoverable. Ensure the disk is not mounted and "
+            "you have selected the correct device."
+        )
+        warning_text.setWordWrap(True)
+        warning_layout.addWidget(warning_text)
+        self._ssd_backup_checkbox = QCheckBox("I have verified the correct SSD is selected.")
+        self._ssd_unmounted_checkbox = QCheckBox("The disk is unmounted and safe to erase.")
+        self._ssd_irreversible_checkbox = QCheckBox("I understand the erase is irreversible.")
+        for checkbox in (self._ssd_backup_checkbox, self._ssd_unmounted_checkbox, self._ssd_irreversible_checkbox):
+            checkbox.stateChanged.connect(warning_page.completeChanged)
+            warning_layout.addWidget(checkbox)
+
+        warning_page.isComplete = lambda: all(  # type: ignore[assignment]
+            checkbox.isChecked()
+            for checkbox in (self._ssd_backup_checkbox, self._ssd_unmounted_checkbox, self._ssd_irreversible_checkbox)
+        )
+
+        compatibility_page = QWizardPage()
+        compatibility_page.setTitle("Compatibility Check")
+        compat_layout = QVBoxLayout(compatibility_page)
+        compat_intro = QLabel("Secure erase is only available for SSD or NVMe devices with supported tooling.")
+        compat_intro.setWordWrap(True)
+        compat_layout.addWidget(compat_intro)
+        self._compatibility_output = QTextEdit()
+        self._compatibility_output.setReadOnly(True)
+        compat_layout.addWidget(self._compatibility_output)
+        compatibility_page.isComplete = lambda: self._compatibility_ok  # type: ignore[assignment]
+
+        def _run_compat_checks() -> None:
+            options = SSDSecureEraseOptions(
+                disk_path=self._disk.device_path,
+                allow_system_disk=False,
+                require_unmounted=True,
+            )
+            success, message = self._session.platform.secure_erase_ssd(options, dry_run=True)
+            checks = [
+                f"Target: {self._disk.device_path}",
+                message,
+            ]
+            if self._session.platform.requires_admin and not self._session.platform.is_admin():
+                checks.append("Administrator/root privileges are required.")
+                success = False
+            self._compatibility_output.setText("\n".join(checks))
+            self._compatibility_ok = success
+            compatibility_page.completeChanged.emit()
+
+        compatibility_page.initializePage = _run_compat_checks  # type: ignore[assignment]
+
+        confirm_phrase = f"SECURE ERASE {disk.device_path}"
+        confirm_page = ConfirmationPage(
+            "Confirm Secure Erase",
+            "This will issue a hardware secure erase command for the selected SSD.",
+            confirm_phrase,
+        )
+
+        result_page = OperationResultPage(
+            "SSD Secure Erase",
+            self._secure_erase,
+            status_callback,
+            f"Secure erasing {disk.device_path}...",
+        )
+
+        self.addPage(warning_page)
+        self.addPage(compatibility_page)
+        self.addPage(confirm_page)
+        self.addPage(result_page)
+
+    def _secure_erase(self) -> OperationResult:
+        options = SSDSecureEraseOptions(
+            disk_path=self._disk.device_path,
+            allow_system_disk=False,
+            require_unmounted=True,
+        )
+        success, message = self._session.platform.secure_erase_ssd(options)
         return OperationResult(success=success, message=message)
 
 

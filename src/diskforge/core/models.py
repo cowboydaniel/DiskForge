@@ -449,6 +449,26 @@ class WipeOptions:
 
 
 @dataclass
+class SystemDiskWipeOptions:
+    """Options for wiping a system disk with extra safeguards."""
+
+    disk_path: str
+    method: str = "zero"
+    passes: int = 1
+    allow_system_disk: bool = False
+    require_offline: bool = True
+
+
+@dataclass
+class SSDSecureEraseOptions:
+    """Options for performing SSD secure erase."""
+
+    disk_path: str
+    allow_system_disk: bool = False
+    require_unmounted: bool = True
+
+
+@dataclass
 class FileRecoveryOptions:
     """Options for recovering deleted files."""
 

@@ -32,7 +32,7 @@ from PySide6.QtGui import QAction, QIcon
 import humanize
 
 from diskforge import __version__
-from diskforge.core.models import Disk, Partition
+from diskforge.core.models import Disk, DiskType, Partition
 from diskforge.core.safety import DangerMode
 from diskforge.core.session import Session
 from diskforge.ui.models.disk_model import DiskModel
@@ -67,6 +67,8 @@ from diskforge.ui.views.wizards import (
     PartitionAttributesWizard,
     InitializeDiskWizard,
     WipeWizard,
+    SystemDiskWipeWizard,
+    SSDSecureEraseWizard,
     PartitionRecoveryWizard,
     FileRecoveryWizard,
     ShredWizard,
@@ -149,6 +151,8 @@ class MainWindow(QMainWindow):
             "edit_partition_attributes": QAction("Edit Partition Attributes...", self),
             "initialize_disk": QAction("Initialize Disk...", self),
             "wipe_device": QAction("Wipe/Secure Erase...", self),
+            "wipe_system_disk": QAction("System Disk Wipe...", self),
+            "secure_erase_ssd": QAction("SSD Secure Erase...", self),
             "partition_recovery": QAction("Partition Recovery...", self),
             "file_recovery": QAction("File Recovery...", self),
             "shred_files": QAction("Shred Files/Folders...", self),
@@ -197,6 +201,8 @@ class MainWindow(QMainWindow):
             "edit_partition_attributes": DiskForgeIcons.FORMAT_PARTITION,
             "initialize_disk": DiskForgeIcons.CLONE_DISK,
             "wipe_device": DiskForgeIcons.DELETE_PARTITION,
+            "wipe_system_disk": DiskForgeIcons.DELETE_PARTITION,
+            "secure_erase_ssd": DiskForgeIcons.DELETE_PARTITION,
             "partition_recovery": DiskForgeIcons.RESTORE_BACKUP,
             "file_recovery": DiskForgeIcons.RESTORE_BACKUP,
             "shred_files": DiskForgeIcons.DELETE_PARTITION,
@@ -249,6 +255,8 @@ class MainWindow(QMainWindow):
         actions["edit_partition_attributes"].triggered.connect(self._on_edit_partition_attributes)
         actions["initialize_disk"].triggered.connect(self._on_initialize_disk)
         actions["wipe_device"].triggered.connect(self._on_wipe_device)
+        actions["wipe_system_disk"].triggered.connect(self._on_wipe_system_disk)
+        actions["secure_erase_ssd"].triggered.connect(self._on_secure_erase_ssd)
         actions["partition_recovery"].triggered.connect(self._on_partition_recovery)
         actions["file_recovery"].triggered.connect(self._on_file_recovery)
         actions["shred_files"].triggered.connect(self._on_shred_files)
@@ -370,7 +378,11 @@ class MainWindow(QMainWindow):
                         [
                             RibbonButton(self._actions["defrag_disk"], size="small"),
                             RibbonButton(self._actions["wipe_device"], size="small"),
+                            RibbonButton(self._actions["secure_erase_ssd"], size="small"),
                             RibbonButton(self._actions["partition_recovery"], size="small"),
+                        ],
+                        [
+                            RibbonButton(self._actions["wipe_system_disk"], size="small"),
                         ],
                         [
                             RibbonButton(self._actions["initialize_disk"], size="small"),
@@ -890,6 +902,18 @@ class MainWindow(QMainWindow):
                 "Wipe/Secure Erase...",
             )
             wipe_action.triggered.connect(self._on_wipe_device)
+
+            secure_erase_action = menu.addAction(
+                self._actions["secure_erase_ssd"].icon(),
+                "SSD Secure Erase...",
+            )
+            secure_erase_action.triggered.connect(self._on_secure_erase_ssd)
+
+            system_wipe_action = menu.addAction(
+                self._actions["wipe_system_disk"].icon(),
+                "System Disk Wipe...",
+            )
+            system_wipe_action.triggered.connect(self._on_wipe_system_disk)
 
             migrate_action = menu.addAction(
                 self._actions["migrate_system"].icon(),
@@ -1519,6 +1543,64 @@ class MainWindow(QMainWindow):
         wizard = WipeWizard(
             self._session,
             target_path,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_wipe_system_disk(self) -> None:
+        """Handle system disk wipe action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if not isinstance(item, Disk):
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+            return
+
+        if not item.is_system_disk:
+            QMessageBox.warning(self, "Not System Disk", "Selected disk is not marked as the system disk.")
+            return
+
+        if not self._check_danger_mode():
+            return
+
+        wizard = SystemDiskWipeWizard(
+            self._session,
+            item,
+            self._status_label.setText,
+            self,
+        )
+        self._run_wizard(wizard)
+
+    def _on_secure_erase_ssd(self) -> None:
+        """Handle SSD secure erase action."""
+        indexes = self._disk_tree.selectionModel().selectedIndexes()
+        if not indexes:
+            QMessageBox.warning(self, "No Selection", "Please select a disk first.")
+            return
+
+        item = self._disk_model.getItemAtIndex(indexes[0])
+        if not isinstance(item, Disk):
+            QMessageBox.warning(self, "Invalid Selection", "Please select a disk, not a partition.")
+            return
+
+        if item.disk_type not in {DiskType.SSD, DiskType.NVME}:
+            QMessageBox.warning(self, "Unsupported Disk", "Secure erase is only supported for SSD or NVMe disks.")
+            return
+
+        if item.is_system_disk:
+            QMessageBox.critical(self, "System Disk", "Cannot secure erase the system disk.")
+            return
+
+        if not self._check_danger_mode():
+            return
+
+        wizard = SSDSecureEraseWizard(
+            self._session,
+            item,
             self._status_label.setText,
             self,
         )

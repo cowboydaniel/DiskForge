@@ -48,6 +48,8 @@ if TYPE_CHECKING:
         SplitPartitionOptions,
         ShredOptions,
         WipeOptions,
+        SystemDiskWipeOptions,
+        SSDSecureEraseOptions,
         DuplicateScanResult,
         FileRemovalResult,
         FreeSpaceReport,
@@ -340,6 +342,30 @@ class PlatformBackend(ABC):
     ) -> tuple[bool, str]:
         """
         Wipe a disk or partition.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def wipe_system_disk(
+        self,
+        options: SystemDiskWipeOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Wipe a system disk with strict safeguards.
+        Returns (success, message/error).
+        """
+
+    @abstractmethod
+    def secure_erase_ssd(
+        self,
+        options: SSDSecureEraseOptions,
+        context: JobContext | None = None,
+        dry_run: bool = False,
+    ) -> tuple[bool, str]:
+        """
+        Perform a secure erase workflow on an SSD.
         Returns (success, message/error).
         """
 
