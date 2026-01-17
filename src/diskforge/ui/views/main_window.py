@@ -99,6 +99,7 @@ from diskforge.ui.views.wizards import (
     WindowsToGoWizard,
     ResetWindowsPasswordWizard,
 )
+from diskforge.sync import SyncManager
 
 
 class MainWindow(QMainWindow):
@@ -896,6 +897,18 @@ class MainWindow(QMainWindow):
         self._status_label = QLabel("Ready")
         statusbar.addWidget(self._status_label, 1)
 
+        self._sync_mode_combo = QComboBox()
+        self._sync_mode_combo.addItems(["one-way", "two-way"])
+        self._sync_mode_combo.setCurrentText(self._session.config.sync.direction)
+        self._sync_mode_combo.setToolTip("Select sync mode")
+        self._sync_mode_combo.currentTextChanged.connect(self._on_sync_mode_changed)
+        statusbar.addPermanentWidget(QLabel("Sync:"))
+        statusbar.addPermanentWidget(self._sync_mode_combo)
+
+        self._sync_status_button = QPushButton("Sync Status")
+        self._sync_status_button.clicked.connect(self._show_sync_status)
+        statusbar.addPermanentWidget(self._sync_status_button)
+
         self._disk_count_label = QLabel("")
         statusbar.addPermanentWidget(self._disk_count_label)
 
@@ -903,6 +916,33 @@ class MainWindow(QMainWindow):
         statusbar.addPermanentWidget(self._admin_label)
 
         self._update_admin_status()
+
+    def _on_sync_mode_changed(self, mode: str) -> None:
+        self._session.config.sync.direction = mode
+        if hasattr(self, "_status_label"):
+            self._status_label.setText(f"Sync mode: {mode}")
+
+    def _show_sync_status(self) -> None:
+        manager = SyncManager(self._session.config.sync)
+        status = manager.load_status()
+        if not status:
+            QMessageBox.information(self, "Sync Status", "No sync status recorded yet.")
+            return
+
+        summary = status.get("summary", {})
+        details = (
+            f"Source: {status.get('source')}\n"
+            f"Target: {status.get('target')}\n"
+            f"Direction: {status.get('direction')}\n"
+            f"Conflict policy: {status.get('conflict_policy')}\n"
+            f"Started: {status.get('started_at')}\n"
+            f"Ended: {status.get('ended_at')}\n\n"
+            f"Copied: {summary.get('copied', 0)}\n"
+            f"Skipped: {summary.get('skipped', 0)}\n"
+            f"Conflicts: {summary.get('conflicts', 0)}\n"
+            f"Errors: {summary.get('errors', 0)}\n"
+        )
+        QMessageBox.information(self, "Sync Status", details)
 
     def _update_admin_status(self) -> None:
         """Update admin status indicator."""

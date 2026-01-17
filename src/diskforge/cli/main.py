@@ -34,6 +34,7 @@ from diskforge.core.models import (
 )
 from diskforge.core.safety import DangerMode
 from diskforge.core.session import Session
+from diskforge.sync import SyncManager
 
 console = Console()
 
@@ -260,9 +261,129 @@ def disk_health(ctx: click.Context, device: str) -> None:
         title="Disk Health Check",
     )
     console.print(panel)
-
     if not result.smart_available:
         sys.exit(1)
+
+
+@cli.group("sync")
+@click.pass_context
+def sync_group(ctx: click.Context) -> None:
+    """Synchronize files between two paths."""
+    ctx.ensure_object(dict)
+
+
+@sync_group.command("run")
+@click.option(
+    "--source",
+    "-s",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Source path for synchronization",
+)
+@click.option(
+    "--target",
+    "-t",
+    type=click.Path(path_type=Path),
+    required=True,
+    help="Target path for synchronization",
+)
+@click.option(
+    "--mode",
+    type=click.Choice(["one-way", "two-way"], case_sensitive=False),
+    help="Sync mode (overrides config)",
+)
+@click.option(
+    "--conflict-policy",
+    type=click.Choice(["source_wins", "target_wins", "newest_wins", "skip"], case_sensitive=False),
+    help="Conflict resolution policy",
+)
+@click.option(
+    "--exclude",
+    "-e",
+    multiple=True,
+    help="Exclude pattern (can be specified multiple times)",
+)
+@click.pass_context
+def sync_run(
+    ctx: click.Context,
+    source: Path,
+    target: Path,
+    mode: str | None,
+    conflict_policy: str | None,
+    exclude: tuple[str, ...],
+) -> None:
+    """Run a sync job immediately."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+    manager = SyncManager(session.config.sync)
+    status = manager.run(
+        source=source,
+        target=target,
+        direction=mode,
+        conflict_policy=conflict_policy,
+        exclude_patterns=exclude or None,
+    )
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(status.to_dict(), indent=2))
+        return
+
+    summary = status.summary
+    panel = Panel(
+        f"""[cyan]Source:[/cyan] {status.source}
+[cyan]Target:[/cyan] {status.target}
+[cyan]Direction:[/cyan] {status.direction}
+[cyan]Conflict policy:[/cyan] {status.conflict_policy}
+
+[green]Copied:[/green] {summary.copied}
+[yellow]Skipped:[/yellow] {summary.skipped}
+[red]Conflicts:[/red] {summary.conflicts}
+[red]Errors:[/red] {summary.errors}
+""",
+        title="Sync Completed",
+    )
+    console.print(panel)
+
+
+@sync_group.command("status")
+@click.pass_context
+def sync_status(ctx: click.Context) -> None:
+    """Show the last sync status."""
+    session = get_session(ctx)
+    json_output = ctx.obj.get("json_output", False)
+    manager = SyncManager(session.config.sync)
+    status = manager.load_status()
+
+    if json_output:
+        import json
+
+        click.echo(json.dumps(status or {}, indent=2))
+        return
+
+    if not status:
+        console.print("[yellow]No sync status recorded yet.[/yellow]")
+        return
+
+    summary = status.get("summary", {})
+    panel = Panel(
+        f"""[cyan]Source:[/cyan] {status.get('source')}
+[cyan]Target:[/cyan] {status.get('target')}
+[cyan]Direction:[/cyan] {status.get('direction')}
+[cyan]Conflict policy:[/cyan] {status.get('conflict_policy')}
+[cyan]Started:[/cyan] {status.get('started_at')}
+[cyan]Ended:[/cyan] {status.get('ended_at')}
+
+[green]Copied:[/green] {summary.get('copied', 0)}
+[yellow]Skipped:[/yellow] {summary.get('skipped', 0)}
+[red]Conflicts:[/red] {summary.get('conflicts', 0)}
+[red]Errors:[/red] {summary.get('errors', 0)}
+""",
+        title="Last Sync Status",
+    )
+    console.print(panel)
+
 
 
 @cli.command("speed-test")
