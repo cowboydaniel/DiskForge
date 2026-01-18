@@ -6,13 +6,13 @@ Displays context-aware actions for the selected disk or partition.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
     QFrame,
-    QHBoxLayout,
     QLabel,
-    QPushButton,
     QScrollArea,
     QSizePolicy,
     QToolButton,
@@ -20,41 +20,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-DISK_ACTION_KEYS: tuple[str, ...] = (
-    "clone_disk",
-    "create_backup",
-    "system_backup",
-    "restore_backup",
-    "initialize_disk",
-    "convert_partition_style",
-    "convert_disk_layout",
-    "defrag_disk",
-    "disk_health_check",
-    "disk_speed_test",
-    "bad_sector_scan",
-    "surface_test",
-    "wipe_device",
-    "secure_erase_ssd",
-)
+@dataclass(frozen=True)
+class ActionEntry:
+    """Config for a selection action button."""
 
-PARTITION_ACTION_KEYS: tuple[str, ...] = (
-    "clone_partition",
-    "format_partition",
-    "delete_partition",
-    "resize_move_partition",
-    "extend_partition",
-    "shrink_partition",
-    "merge_partitions",
-    "split_partition",
-    "align_4k",
-    "convert_filesystem",
-    "convert_partition_role",
-    "edit_partition_attributes",
-    "defrag_partition",
-    "bitlocker_status",
-    "bitlocker_enable",
-    "bitlocker_disable",
-)
+    label: str
+    disk_action: str | None = None
+    partition_action: str | None = None
+    requires_selection: bool = True
 
 
 class SelectionActionsPanel(QWidget):
@@ -65,22 +38,13 @@ class SelectionActionsPanel(QWidget):
     def __init__(self, actions: dict[str, QAction], parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._actions = actions
-        self._selection_label = QLabel("No selection")
+        self._selection_type: str | None = None
+
+        self._title_label = QLabel("Actions")
+        self._title_label.setObjectName("sectionTitle")
+
+        self._selection_label = QLabel("Selected: None")
         self._selection_label.setObjectName("selectionActionsSubtitle")
-
-        self._properties_button = QPushButton("Properties")
-        self._properties_button.setObjectName("selectionPropertiesButton")
-        self._properties_button.setEnabled(False)
-        self._properties_button.setMinimumWidth(120)
-        self._properties_button.setMinimumHeight(30)
-        self._properties_button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-        self._properties_button.clicked.connect(self.propertiesRequested)
-
-        header_layout = QHBoxLayout()
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.addWidget(self._selection_label)
-        header_layout.addStretch()
-        header_layout.addWidget(self._properties_button)
 
         self._actions_container = QWidget()
         self._actions_layout = QVBoxLayout(self._actions_container)
@@ -88,6 +52,7 @@ class SelectionActionsPanel(QWidget):
         self._actions_layout.setSpacing(6)
 
         self._scroll_area = QScrollArea()
+        self._scroll_area.setObjectName("selectionActionsScroll")
         self._scroll_area.setWidgetResizable(True)
         self._scroll_area.setFrameShape(QFrame.NoFrame)
         self._scroll_area.setWidget(self._actions_container)
@@ -95,57 +60,86 @@ class SelectionActionsPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
-        layout.addLayout(header_layout)
+        layout.addWidget(self._title_label)
+        layout.addWidget(self._selection_label)
         layout.addWidget(self._scroll_area)
 
-        self._set_placeholder("Select a disk or partition to view actions.")
+        self._action_entries = self._build_action_entries()
+        self._action_buttons: dict[str, QToolButton] = {}
+        self._build_action_buttons()
+        self._update_action_states()
 
     def set_selection(self, selection_type: str | None, label: str | None = None) -> None:
         """Update the panel based on the current selection."""
-        if selection_type == "disk":
-            self._selection_label.setText(label or "Disk selected")
-            self._properties_button.setEnabled(True)
-            self._populate_actions(DISK_ACTION_KEYS)
-            return
+        self._selection_type = selection_type
+        if selection_type:
+            self._selection_label.setText(f"Selected: {label or selection_type.title()}")
+        else:
+            self._selection_label.setText("Selected: None")
+        self._update_action_states()
 
-        if selection_type == "partition":
-            self._selection_label.setText(label or "Partition selected")
-            self._properties_button.setEnabled(True)
-            self._populate_actions(PARTITION_ACTION_KEYS)
-            return
+    def _build_action_entries(self) -> tuple[ActionEntry, ...]:
+        return (
+            ActionEntry("Resize/Move", partition_action="resize_move_partition"),
+            ActionEntry("Split", partition_action="split_partition"),
+            ActionEntry("Format", partition_action="format_partition"),
+            ActionEntry("Delete", partition_action="delete_partition"),
+            ActionEntry("Wipe", disk_action="wipe_device", partition_action="wipe_device"),
+            ActionEntry("Clone", disk_action="clone_disk", partition_action="clone_partition"),
+            ActionEntry("Check", disk_action="disk_health_check", partition_action="defrag_partition"),
+            ActionEntry("Properties", requires_selection=True),
+        )
 
-        self._selection_label.setText("No selection")
-        self._properties_button.setEnabled(False)
-        self._set_placeholder("Select a disk or partition to view actions.")
-
-    def _populate_actions(self, action_keys: tuple[str, ...]) -> None:
-        self._clear_actions()
-        for action_key in action_keys:
-            action = self._actions.get(action_key)
-            if action is None:
-                continue
+    def _build_action_buttons(self) -> None:
+        for entry in self._action_entries:
             button = QToolButton()
             button.setObjectName("selectionActionButton")
             button.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-            button.setIcon(action.icon())
-            button.setText(action.text())
-            button.setToolTip(action.statusTip() or action.toolTip())
+            button.setText(entry.label)
             button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-            button.clicked.connect(action.trigger)
+            button.clicked.connect(lambda checked=False, key=entry.label: self._trigger_action(key))
             self._actions_layout.addWidget(button)
+            self._action_buttons[entry.label] = button
         self._actions_layout.addStretch()
 
-    def _set_placeholder(self, message: str) -> None:
-        self._clear_actions()
-        placeholder = QLabel(message)
-        placeholder.setWordWrap(True)
-        placeholder.setObjectName("selectionActionsPlaceholder")
-        self._actions_layout.addWidget(placeholder)
-        self._actions_layout.addStretch()
+    def _update_action_states(self) -> None:
+        for entry in self._action_entries:
+            button = self._action_buttons.get(entry.label)
+            if not button:
+                continue
+            action_key = self._resolve_action_key(entry)
+            action = self._actions.get(action_key) if action_key else None
+            if entry.label == "Properties":
+                about_action = self._actions.get("about")
+                button.setIcon(about_action.icon() if about_action else QIcon())
+                button.setToolTip("View properties for the current selection.")
+                enabled = bool(self._selection_type)
+            else:
+                if action:
+                    button.setIcon(action.icon())
+                    button.setToolTip(action.statusTip() or action.toolTip())
+                else:
+                    button.setIcon(QIcon())
+                    button.setToolTip("")
+                enabled = bool(self._selection_type) and action_key is not None
+            button.setEnabled(enabled)
 
-    def _clear_actions(self) -> None:
-        while self._actions_layout.count():
-            item = self._actions_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+    def _resolve_action_key(self, entry: ActionEntry) -> str | None:
+        if self._selection_type == "disk":
+            return entry.disk_action
+        if self._selection_type == "partition":
+            return entry.partition_action
+        return None
+
+    def _trigger_action(self, label: str) -> None:
+        entry = next((item for item in self._action_entries if item.label == label), None)
+        if entry is None:
+            return
+        if label == "Properties":
+            if self._selection_type:
+                self.propertiesRequested.emit()
+            return
+        action_key = self._resolve_action_key(entry)
+        action = self._actions.get(action_key) if action_key else None
+        if action and action.isEnabled():
+            action.trigger()

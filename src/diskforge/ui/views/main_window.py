@@ -585,7 +585,7 @@ class MainWindow(QMainWindow):
         center_panel = QWidget()
         center_layout = QVBoxLayout(center_panel)
         center_layout.setContentsMargins(12, 12, 12, 12)
-        center_layout.setSpacing(10)
+        center_layout.setSpacing(12)
 
         disk_title = QLabel("Disks & Partitions")
         disk_title.setObjectName("sectionTitle")
@@ -610,8 +610,8 @@ class MainWindow(QMainWindow):
         disk_map_panel = QFrame()
         disk_map_panel.setObjectName("diskMapStrip")
         disk_map_layout = QVBoxLayout(disk_map_panel)
-        disk_map_layout.setContentsMargins(10, 10, 10, 10)
-        disk_map_layout.setSpacing(6)
+        disk_map_layout.setContentsMargins(12, 12, 12, 12)
+        disk_map_layout.setSpacing(8)
 
         disk_map_title = QLabel("Disk Map")
         disk_map_title.setObjectName("sectionTitle")
@@ -630,37 +630,65 @@ class MainWindow(QMainWindow):
         right_layout.setContentsMargins(12, 12, 12, 12)
         right_layout.setSpacing(12)
 
-        context_section = QFrame()
-        context_section.setObjectName("contextPanel")
-        context_layout = QVBoxLayout(context_section)
-        context_layout.setContentsMargins(10, 10, 10, 10)
-        context_layout.setSpacing(8)
+        sidebar_tabs = QTabWidget()
+        sidebar_tabs.setObjectName("sidebarTabs")
+
+        actions_tab = QWidget()
+        actions_layout = QVBoxLayout(actions_tab)
+        actions_layout.setContentsMargins(12, 12, 12, 12)
+        actions_layout.setSpacing(12)
+
+        actions_panel = QFrame()
+        actions_panel.setObjectName("contextPanel")
+        actions_panel_layout = QVBoxLayout(actions_panel)
+        actions_panel_layout.setContentsMargins(12, 12, 12, 12)
+        actions_panel_layout.setSpacing(8)
+
+        self._selection_actions_panel = SelectionActionsPanel(self._actions, actions_panel)
+        self._selection_actions_panel.propertiesRequested.connect(self._show_selection_properties)
+        actions_panel_layout.addWidget(self._selection_actions_panel)
+        actions_layout.addWidget(actions_panel)
+
+        details_tab = QWidget()
+        details_layout = QVBoxLayout(details_tab)
+        details_layout.setContentsMargins(12, 12, 12, 12)
+        details_layout.setSpacing(12)
+
+        usage_section = QFrame()
+        usage_section.setObjectName("contextPanel")
+        usage_layout = QVBoxLayout(usage_section)
+        usage_layout.setContentsMargins(12, 12, 12, 12)
+        usage_layout.setSpacing(8)
 
         usage_title = QLabel("Usage")
         usage_title.setObjectName("sectionTitle")
-        context_layout.addWidget(usage_title)
+        usage_layout.addWidget(usage_title)
 
         self._usage_chart = UsageDonutWidget()
-        context_layout.addWidget(self._usage_chart, alignment=Qt.AlignCenter)
+        usage_layout.addWidget(self._usage_chart, alignment=Qt.AlignCenter)
 
         self._usage_summary = QLabel("Select a disk or partition to view usage.")
         self._usage_summary.setObjectName("usageSummary")
         self._usage_summary.setWordWrap(True)
-        context_layout.addWidget(self._usage_summary)
+        usage_layout.addWidget(self._usage_summary)
 
-        self._selection_actions_panel = SelectionActionsPanel(self._actions, context_section)
-        self._selection_actions_panel.propertiesRequested.connect(self._show_selection_properties)
-        context_layout.addWidget(self._selection_actions_panel)
+        details_layout.addWidget(usage_section)
+
+        details_section = QFrame()
+        details_section.setObjectName("contextPanel")
+        details_section_layout = QVBoxLayout(details_section)
+        details_section_layout.setContentsMargins(12, 12, 12, 12)
+        details_section_layout.setSpacing(8)
 
         details_title = QLabel("Details")
         details_title.setObjectName("sectionTitle")
-        context_layout.addWidget(details_title)
+        details_section_layout.addWidget(details_title)
 
         self._details_label = QLabel("Select a disk or partition to view details")
         self._details_label.setWordWrap(True)
-        context_layout.addWidget(self._details_label)
+        details_section_layout.addWidget(self._details_label)
 
-        right_layout.addWidget(context_section)
+        details_layout.addWidget(details_section)
 
         self._bitlocker_group = QGroupBox("BitLocker")
         bitlocker_layout = QVBoxLayout(self._bitlocker_group)
@@ -690,14 +718,18 @@ class MainWindow(QMainWindow):
         bitlocker_button_row.addStretch()
         bitlocker_layout.addLayout(bitlocker_button_row)
 
-        right_layout.addWidget(self._bitlocker_group)
+        details_layout.addWidget(self._bitlocker_group)
+        details_layout.addStretch()
 
-        sidebar_tabs = QTabWidget()
-        sidebar_tabs.setObjectName("sidebarTabs")
+        queue_tab = QWidget()
+        queue_layout = QVBoxLayout(queue_tab)
+        queue_layout.setContentsMargins(12, 12, 12, 12)
+        queue_layout.setSpacing(12)
 
-        pending_tab = QWidget()
-        pending_layout = QVBoxLayout(pending_tab)
-        pending_layout.setContentsMargins(6, 6, 6, 6)
+        pending_title = QLabel("Pending Operations")
+        pending_title.setObjectName("sectionTitle")
+        queue_layout.addWidget(pending_title)
+
         self._pending_widget = PendingOperationsWidget()
         self._pending_widget.setModel(self._pending_model)
         self._pending_widget.applyRequested.connect(self._apply_pending_operations)
@@ -706,22 +738,22 @@ class MainWindow(QMainWindow):
         self._actions["undo"].triggered.connect(self._pending_model.undoLastOperation)
         self._pending_model.pendingCountChanged.connect(self._actions["apply"].setEnabled)
         self._pending_model.pendingCountChanged.connect(self._actions["undo"].setEnabled)
-        pending_layout.addWidget(self._pending_widget)
-        sidebar_tabs.addTab(pending_tab, "Pending")
+        queue_layout.addWidget(self._pending_widget)
 
-        progress_tab = QWidget()
-        progress_layout = QVBoxLayout(progress_tab)
-        progress_layout.setContentsMargins(6, 6, 6, 6)
+        progress_title = QLabel("Progress")
+        progress_title.setObjectName("sectionTitle")
+        queue_layout.addWidget(progress_title)
+
         self._progress_widget = ProgressWidget()
         self._progress_widget.cancelRequested.connect(self._on_cancel_job)
         self._progress_widget.pauseRequested.connect(self._on_pause_job)
         self._progress_widget.resumeRequested.connect(self._on_resume_job)
-        progress_layout.addWidget(self._progress_widget)
-        sidebar_tabs.addTab(progress_tab, "Progress")
+        queue_layout.addWidget(self._progress_widget)
 
-        queue_tab = QWidget()
-        queue_layout = QVBoxLayout(queue_tab)
-        queue_layout.setContentsMargins(6, 6, 6, 6)
+        queue_title = QLabel("Job Queue")
+        queue_title.setObjectName("sectionTitle")
+        queue_layout.addWidget(queue_title)
+
         self._job_table = QTableView()
         self._job_table.setModel(self._job_model)
         self._job_table.setSelectionBehavior(QTableView.SelectRows)
@@ -732,6 +764,9 @@ class MainWindow(QMainWindow):
         clear_btn = QPushButton("Clear Completed")
         clear_btn.clicked.connect(self._job_model.clearCompleted)
         queue_layout.addWidget(clear_btn)
+
+        sidebar_tabs.addTab(actions_tab, "Actions")
+        sidebar_tabs.addTab(details_tab, "Details")
         sidebar_tabs.addTab(queue_tab, "Queue")
 
         right_layout.addWidget(sidebar_tabs)
@@ -937,10 +972,34 @@ class MainWindow(QMainWindow):
 
         if isinstance(item, Disk):
             self._show_disk_details(item)
-            self._selection_actions_panel.set_selection("disk", item.device_path)
+            self._selection_actions_panel.set_selection("disk", self._format_selection_label(item))
         elif isinstance(item, Partition):
             self._show_partition_details(item)
-            self._selection_actions_panel.set_selection("partition", item.device_path)
+            self._selection_actions_panel.set_selection("partition", self._format_selection_label(item))
+
+    def _format_selection_label(self, item: Disk | Partition) -> str:
+        inventory = self._disk_model.getInventory()
+        if isinstance(item, Disk):
+            disk_index = 0
+            if inventory:
+                for index, disk in enumerate(inventory.disks, start=1):
+                    if disk.device_path == item.device_path:
+                        disk_index = index
+                        break
+            disk_label = f"Disk {disk_index}" if disk_index else "Disk"
+            return f"{disk_label} • {item.display_name}"
+
+        disk_label = "Disk"
+        part_label = item.mountpoint.rstrip("\\/") if item.mountpoint else (item.label or f"Partition {item.number}")
+        if inventory:
+            found = inventory.get_partition_by_path(item.device_path)
+            if found:
+                disk, _ = found
+                for index, disk_entry in enumerate(inventory.disks, start=1):
+                    if disk_entry.device_path == disk.device_path:
+                        disk_label = f"Disk {index}"
+                        break
+        return f"{disk_label} / {part_label}"
 
     def _show_disk_details(self, disk: Disk) -> None:
         """Show disk details in the details panel."""

@@ -94,7 +94,7 @@ class PartitionRectItem(QGraphicsRectItem):
 
         # Set color based on filesystem
         self._base_color = filesystem_color(partition.filesystem)
-        self._border_pen = QPen(QColor(185, 195, 215), 1)
+        self._border_pen = QPen(QColor(205, 214, 231), 0.6)
 
         # Hover effects
         self.setAcceptHoverEvents(True)
@@ -125,9 +125,9 @@ class PartitionRectItem(QGraphicsRectItem):
 
     def _partition_gradient(self, rect: QRectF) -> QBrush:
         gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        gradient.setColorAt(0.0, self._base_color.lighter(125))
-        gradient.setColorAt(0.55, self._base_color)
-        gradient.setColorAt(1.0, self._base_color.darker(115))
+        gradient.setColorAt(0.0, self._base_color.lighter(112))
+        gradient.setColorAt(0.6, self._base_color)
+        gradient.setColorAt(1.0, self._base_color.darker(108))
         return QBrush(gradient)
 
     def paint(self, painter: QPainter, option: QGraphicsItem, widget: QWidget | None = None) -> None:
@@ -139,10 +139,10 @@ class PartitionRectItem(QGraphicsRectItem):
         painter.setBrush(self._partition_gradient(rect))
         painter.drawRoundedRect(rect, radius, radius)
 
-        band_height = min(max(rect.height() * 0.22, 6), 14)
+        band_height = min(max(rect.height() * 0.2, 5), 12)
         band_rect = QRectF(rect.left(), rect.top(), rect.width(), band_height)
-        painter.fillRect(band_rect, self._base_color.darker(120))
-        painter.setPen(QPen(QColor(255, 255, 255, 130), 1))
+        painter.fillRect(band_rect, self._base_color.darker(112))
+        painter.setPen(QPen(QColor(255, 255, 255, 110), 1))
         painter.drawLine(band_rect.left() + 1, band_rect.bottom(), band_rect.right() - 1, band_rect.bottom())
 
         if self._hovered or self.isSelected():
@@ -165,8 +165,8 @@ class DiskGraphicsView(QGraphicsView):
         super().__init__(parent)
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
-        self.setMinimumHeight(80)
-        self.setMaximumHeight(120)
+        self.setMinimumHeight(64)
+        self.setMaximumHeight(100)
 
         # Style
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -194,7 +194,7 @@ class DiskGraphicsView(QGraphicsView):
 
         # Get available width
         width = max(self.viewport().width() - 20, 100)
-        height = 56
+        height = 44
         x_offset = 10
         y_offset = 10
 
@@ -204,7 +204,7 @@ class DiskGraphicsView(QGraphicsView):
             y_offset,
             width,
             height,
-            QPen(QColor(164, 182, 211), 1),
+            QPen(QColor(190, 202, 221), 0.6),
             QBrush(QColor(250, 252, 255)),
         )
         disk_rect.setZValue(0)
@@ -240,7 +240,7 @@ class DiskGraphicsView(QGraphicsView):
                 continue
 
             # Create partition rectangle
-            rect = QRectF(current_x, y_offset + 5, part_width - 2, height - 10)
+            rect = QRectF(current_x, y_offset + 4, part_width - 2, height - 8)
             part_item = PartitionRectItem(partition, rect)
             part_item.setFlag(QGraphicsItem.ItemIsSelectable)
             self._scene.addItem(part_item)
@@ -250,7 +250,7 @@ class DiskGraphicsView(QGraphicsView):
             size_text = humanize.naturalsize(partition.size_bytes, binary=True)
             fs_text = partition.filesystem.value
 
-            band_height = min(max((height - 10) * 0.22, 6), 14)
+            band_height = min(max((height - 8) * 0.2, 5), 12)
             padding_x = 6
             label_item = QGraphicsTextItem(f"<b>{label}</b>")
             label_item.setFont(text_font)
@@ -284,13 +284,13 @@ class DiskGraphicsView(QGraphicsView):
             if unalloc_width > 5:
                 unalloc_gradient = QLinearGradient(0, y_offset + 5, 0, y_offset + height - 5)
                 unalloc_gradient.setColorAt(0.0, QColor(248, 248, 248))
-                unalloc_gradient.setColorAt(1.0, QColor(232, 232, 232))
+                unalloc_gradient.setColorAt(1.0, QColor(236, 238, 242))
                 unalloc_rect = self._scene.addRect(
                     current_x,
-                    y_offset + 5,
+                    y_offset + 4,
                     unalloc_width - 2,
-                    height - 10,
-                    QPen(QColor(140, 140, 140), 1, Qt.DashLine),
+                    height - 8,
+                    QPen(QColor(170, 176, 188), 0.6, Qt.DashLine),
                     QBrush(unalloc_gradient),
                 )
                 unalloc_rect.setZValue(1)
@@ -336,7 +336,7 @@ class DiskStripPartitionItem(QGraphicsRectItem):
         super().__init__(rect, parent)
         self.partition = partition
         self._base_color = filesystem_color(partition.filesystem)
-        self._border_pen = QPen(QColor(185, 195, 215), 1)
+        self._border_pen = QPen(QColor(205, 214, 231), 0.6)
         self._label = partition_short_label(partition)
 
         used = partition.used_space_bytes
@@ -351,8 +351,8 @@ class DiskStripPartitionItem(QGraphicsRectItem):
 
     def _partition_gradient(self, rect: QRectF) -> QBrush:
         gradient = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        gradient.setColorAt(0.0, self._base_color.lighter(130))
-        gradient.setColorAt(1.0, self._base_color.darker(120))
+        gradient.setColorAt(0.0, self._base_color.lighter(112))
+        gradient.setColorAt(1.0, self._base_color.darker(108))
         return QBrush(gradient)
 
     def paint(self, painter: QPainter, option: QGraphicsItem, widget: QWidget | None = None) -> None:
@@ -363,7 +363,7 @@ class DiskStripPartitionItem(QGraphicsRectItem):
         painter.drawRoundedRect(rect, 2, 2)
 
         if self._usage_ratio is not None:
-            bar_height = min(max(rect.height() * 0.28, 4), 6)
+            bar_height = min(max(rect.height() * 0.24, 3), 5)
             bar_rect = QRectF(
                 rect.left() + 2,
                 rect.bottom() - bar_height - 2,
@@ -398,8 +398,8 @@ class DiskStripGraphicsView(QGraphicsView):
         super().__init__(parent)
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
-        self.setMinimumHeight(32)
-        self.setMaximumHeight(36)
+        self.setMinimumHeight(28)
+        self.setMaximumHeight(32)
 
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -420,9 +420,9 @@ class DiskStripGraphicsView(QGraphicsView):
             return
 
         width = max(self.viewport().width() - 12, 60)
-        height = 18
+        height = 14
         x_offset = 6
-        y_offset = 4
+        y_offset = 5
 
         total_size = self._disk.size_bytes
         if total_size == 0:
@@ -460,8 +460,8 @@ class DiskStripGraphicsView(QGraphicsView):
                 y_offset,
                 unalloc_width - 2,
                 height,
-                QPen(QColor(140, 140, 140), 1, Qt.DashLine),
-                QBrush(QColor(235, 235, 235)),
+                QPen(QColor(170, 176, 188), 0.6, Qt.DashLine),
+                QBrush(QColor(238, 240, 245)),
             )
             unalloc_rect.setZValue(0)
 
@@ -512,7 +512,7 @@ class MultiDiskMapWidget(QWidget):
         self.setObjectName("multiDiskMap")
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(6)
+        self._layout.setSpacing(8)
 
         self._empty_label = QLabel("No disks available")
         self._empty_label.setObjectName("multiDiskMapEmpty")
